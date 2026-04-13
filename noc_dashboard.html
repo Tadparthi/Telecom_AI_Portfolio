@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Network Cell Health Monitor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+  /* Header */
+  .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 32px; display: flex; align-items: center; gap: 16px; }
+  .header-logo { width: 36px; height: 36px; background: #1f6feb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .header-title { font-size: 18px; font-weight: 600; color: #e6edf3; }
+  .header-sub { font-size: 13px; color: #8b949e; margin-top: 2px; }
+  .status-dot { width: 8px; height: 8px; background: #3fb950; border-radius: 50%; margin-left: auto; }
+  .status-text { font-size: 12px; color: #3fb950; }
+
+  /* Layout */
+  .container { display: grid; grid-template-columns: 420px 1fr; gap: 24px; padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+
+  /* Input panel */
+  .panel { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; }
+  .panel-title { font-size: 14px; font-weight: 600; color: #e6edf3; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 8px; }
+  .panel-title span { font-size: 16px; }
+
+  .kpi-group { margin-bottom: 20px; }
+  .kpi-group-label { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+
+  .kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .kpi-field { display: flex; flex-direction: column; gap: 4px; }
+  .kpi-label { font-size: 12px; color: #8b949e; }
+  .kpi-input { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 10px; color: #e6edf3; font-size: 13px; width: 100%; transition: border-color 0.2s; }
+  .kpi-input:focus { outline: none; border-color: #1f6feb; }
+  .kpi-unit { font-size: 10px; color: #484f58; margin-top: 1px; }
+
+  .cell-id-row { margin-bottom: 16px; }
+  .cell-id-input { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 8px 10px; color: #e6edf3; font-size: 13px; width: 100%; }
+  .cell-id-input:focus { outline: none; border-color: #1f6feb; }
+
+  .btn-predict { width: 100%; padding: 12px; background: #1f6feb; border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 8px; }
+  .btn-predict:hover { background: #388bfd; }
+  .btn-predict:disabled { background: #30363d; cursor: not-allowed; }
+
+  .presets { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .preset-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #8b949e; font-size: 11px; cursor: pointer; transition: all 0.2s; }
+  .preset-btn:hover { border-color: #8b949e; color: #e6edf3; }
+  .preset-btn.critical { border-color: #da3633; color: #f85149; }
+  .preset-btn.healthy  { border-color: #3fb950; color: #3fb950; }
+
+  /* Result panel */
+  .result-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 400px; color: #484f58; gap: 12px; }
+  .result-empty-icon { font-size: 48px; opacity: 0.4; }
+
+  .result-card { display: none; }
+  .result-card.visible { display: block; }
+
+  .health-banner { border-radius: 10px; padding: 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 20px; }
+  .health-icon { font-size: 48px; }
+  .health-band { font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .health-score-label { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+  .health-score-val { font-size: 22px; font-weight: 600; }
+  .health-cell { margin-left: auto; text-align: right; }
+  .health-cell-id { font-size: 16px; font-weight: 600; }
+  .health-cell-time { font-size: 12px; opacity: 0.7; margin-top: 4px; }
+
+  .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .result-box { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+  .result-box-title { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; }
+
+  .flag-list { display: flex; flex-direction: column; gap: 6px; }
+  .flag-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .flag-dot { width: 6px; height: 6px; border-radius: 50%; background: #f85149; flex-shrink: 0; }
+  .flag-none { color: #3fb950; font-size: 13px; }
+
+  .anomaly-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .anomaly-normal   { background: #1a4a2a; color: #3fb950; }
+  .anomaly-anomalous { background: #4a1a1a; color: #f85149; }
+  .anomaly-score-text { font-size: 12px; color: #8b949e; }
+
+  .action-box { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .action-label { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+  .action-text { font-size: 14px; color: #e6edf3; line-height: 1.5; }
+
+  .priority-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .priority-label { font-size: 12px; color: #8b949e; }
+  .priority-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+  .priority-none     { background: #1a3a1a; color: #3fb950; }
+  .priority-low      { background: #1a3a1a; color: #3fb950; }
+  .priority-medium   { background: #3a2a00; color: #d29922; }
+  .priority-high     { background: #3a1a00; color: #f0883e; }
+  .priority-critical { background: #4a0000; color: #f85149; }
+
+  .confidence-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .confidence-label { font-size: 12px; color: #8b949e; min-width: 80px; }
+  .confidence-bar-bg { flex: 1; height: 6px; background: #30363d; border-radius: 3px; }
+  .confidence-bar-fill { height: 6px; border-radius: 3px; background: #1f6feb; transition: width 0.5s; }
+  .confidence-pct { font-size: 12px; color: #8b949e; min-width: 36px; text-align: right; }
+
+  /* Band colors */
+  .band-perfect  { background: #0a2a14; border: 1px solid #3fb950; color: #3fb950; }
+  .band-healthy  { background: #0a2a14; border: 1px solid #3fb950; color: #3fb950; }
+  .band-watch    { background: #2a1f00; border: 1px solid #d29922; color: #d29922; }
+  .band-degraded { background: #2a1200; border: 1px solid #f0883e; color: #f0883e; }
+  .band-critical { background: #2a0000; border: 1px solid #f85149; color: #f85149; }
+
+  .loading { display: none; text-align: center; padding: 40px; color: #8b949e; }
+  .spinner { width: 32px; height: 32px; border: 3px solid #30363d; border-top-color: #1f6feb; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">📡</div>
+  <div>
+    <div class="header-title">Network Cell Health Monitor</div>
+    <div class="header-sub">AI-powered 5G/LTE anomaly detection and health scoring</div>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+    <div class="status-dot"></div>
+    <div class="status-text">API Connected</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- INPUT PANEL -->
+  <div class="panel">
+    <div class="panel-title"><span>⚙️</span> KPI Input</div>
+
+    <div class="cell-id-row">
+      <div class="kpi-label" style="margin-bottom:4px">Cell ID</div>
+      <input class="cell-id-input" id="cell_id" type="text" placeholder="e.g. Cell_1123" value="Cell_1123">
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <div class="kpi-group-label">Load presets</div>
+      <div class="presets">
+        <button class="preset-btn critical" onclick="loadPreset('critical')">🔴 Critical cell</button>
+        <button class="preset-btn healthy"  onclick="loadPreset('healthy')">🟢 Healthy cell</button>
+        <button class="preset-btn"          onclick="loadPreset('watch')">🟡 Watch cell</button>
+        <button class="preset-btn"          onclick="loadPreset('anomalous')">⚠️ Anomalous</button>
+      </div>
+    </div>
+
+    <div class="kpi-group">
+      <div class="kpi-group-label">Signal quality</div>
+      <div class="kpi-row">
+        <div class="kpi-field">
+          <div class="kpi-label">SINR</div>
+          <input class="kpi-input" id="sinr_db" type="number" step="0.1" value="2.1">
+          <div class="kpi-unit">dB · threshold &lt; 5</div>
+        </div>
+        <div class="kpi-field">
+          <div class="kpi-label">CQI Mean</div>
+          <input class="kpi-input" id="cqi_mean" type="number" step="0.1" value="5.2">
+          <div class="kpi-unit">· threshold &lt; 6</div>
+        </div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-field">
+          <div class="kpi-label">BLER DL</div>
+          <input class="kpi-input" id="bler_dl" type="number" step="0.1" value="14.5">
+          <div class="kpi-unit">% · threshold &gt; 10%</div>
+        </div>
+        <div class="kpi-field">
+          <div class="kpi-label">RLF Count</div>
+          <input class="kpi-input" id="rlf_count" type="number" value="67000">
+          <div class="kpi-unit">· threshold &gt; 50,000</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-group">
+      <div class="kpi-group-label">Resource utilization</div>
+      <div class="kpi-row">
+        <div class="kpi-field">
+          <div class="kpi-label">PRB Util DL</div>
+          <input class="kpi-input" id="prb_util_dl" type="number" step="0.1" value="85.0">
+          <div class="kpi-unit">% · threshold &gt; 80%</div>
+        </div>
+        <div class="kpi-field">
+          <div class="kpi-label">PRB Util UL</div>
+          <input class="kpi-input" id="prb_util_ul" type="number" step="0.1" value="72.0">
+          <div class="kpi-unit">%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="kpi-group">
+      <div class="kpi-group-label">Mobility & stability</div>
+      <div class="kpi-row">
+        <div class="kpi-field">
+          <div class="kpi-label">HO Success Rate</div>
+          <input class="kpi-input" id="ho_success_rate" type="number" step="0.1" value="91.0">
+          <div class="kpi-unit">% · threshold &lt; 95%</div>
+        </div>
+        <div class="kpi-field">
+          <div class="kpi-label">Abnormal Release</div>
+          <input class="kpi-input" id="abnormal_release_ratio" type="number" step="0.1" value="18.5">
+          <div class="kpi-unit">% · threshold &gt; 15%</div>
+        </div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-field">
+          <div class="kpi-label">DL Throughput</div>
+          <input class="kpi-input" id="dl_tput_user" type="number" step="0.1" value="3.2">
+          <div class="kpi-unit">Mbps per user</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-predict" onclick="predict()">▶ Run Health Assessment</button>
+  </div>
+
+  <!-- RESULT PANEL -->
+  <div class="panel" id="result-panel">
+
+    <div class="result-empty" id="empty-state">
+      <div class="result-empty-icon">📊</div>
+      <div style="font-size:15px;color:#484f58">Enter KPI values and run assessment</div>
+      <div style="font-size:13px;color:#484f58">Or select a preset to load example values</div>
+    </div>
+
+    <div class="loading" id="loading-state">
+      <div class="spinner"></div>
+      <div>Analyzing cell health...</div>
+    </div>
+
+    <div class="result-card" id="result-card">
+
+      <div class="panel-title"><span>📋</span> Health Assessment Result</div>
+
+      <!-- Health banner -->
+      <div class="health-banner" id="health-banner">
+        <div class="health-icon" id="health-icon"></div>
+        <div>
+          <div class="health-band" id="health-band-text"></div>
+          <div class="health-score-label">Health score</div>
+          <div class="health-score-val" id="health-score-val"></div>
+        </div>
+        <div class="health-cell">
+          <div class="health-cell-id" id="result-cell-id"></div>
+          <div class="health-cell-time" id="result-time"></div>
+        </div>
+      </div>
+
+      <!-- Flags + Anomaly -->
+      <div class="result-grid">
+        <div class="result-box">
+          <div class="result-box-title">KPI flags triggered</div>
+          <div class="flag-list" id="flag-list"></div>
+        </div>
+        <div class="result-box">
+          <div class="result-box-title">Anomaly detection</div>
+          <div id="anomaly-badge"></div>
+          <div class="anomaly-score-text" id="anomaly-score-text"></div>
+        </div>
+      </div>
+
+      <!-- Recommended action -->
+      <div class="action-box">
+        <div class="action-label">Recommended action</div>
+        <div class="action-text" id="action-text"></div>
+        <div class="priority-bar">
+          <div class="priority-label">Priority:</div>
+          <div class="priority-badge" id="priority-badge"></div>
+        </div>
+      </div>
+
+      <!-- Confidence -->
+      <div class="result-box">
+        <div class="result-box-title">Model confidence</div>
+        <div class="confidence-row">
+          <div class="confidence-label">Confidence</div>
+          <div class="confidence-bar-bg">
+            <div class="confidence-bar-fill" id="conf-bar"></div>
+          </div>
+          <div class="confidence-pct" id="conf-pct"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+const PRESETS = {
+  critical: {
+    cell_id: 'Cell_1123', sinr_db: 2.1, cqi_mean: 5.2, bler_dl: 14.5,
+    prb_util_dl: 85.0, prb_util_ul: 72.0, ho_success_rate: 91.0,
+    abnormal_release_ratio: 18.5, rlf_count: 67000, dl_tput_user: 3.2
+  },
+  healthy: {
+    cell_id: 'Cell_0042', sinr_db: 18.5, cqi_mean: 11.2, bler_dl: 2.1,
+    prb_util_dl: 35.0, prb_util_ul: 28.0, ho_success_rate: 99.4,
+    abnormal_release_ratio: 5.2, rlf_count: 12000, dl_tput_user: 45.6
+  },
+  watch: {
+    cell_id: 'Cell_0587', sinr_db: 7.2, cqi_mean: 8.1, bler_dl: 8.5,
+    prb_util_dl: 75.0, prb_util_ul: 62.0, ho_success_rate: 96.5,
+    abnormal_release_ratio: 12.0, rlf_count: 28000, dl_tput_user: 12.4
+  },
+  anomalous: {
+    cell_id: 'Cell_0334', sinr_db: 14.2, cqi_mean: 6.1, bler_dl: 3.2,
+    prb_util_dl: 78.0, prb_util_ul: 65.0, ho_success_rate: 97.8,
+    abnormal_release_ratio: 14.0, rlf_count: 22000, dl_tput_user: 4.1
+  }
+};
+
+function loadPreset(name) {
+  const p = PRESETS[name];
+  Object.keys(p).forEach(k => {
+    const el = document.getElementById(k);
+    if (el) el.value = p[k];
+  });
+}
+
+const BAND_ICONS = {
+  perfect: '🟢', healthy: '🟢', watch: '🟡', degraded: '🟠', critical: '🔴'
+};
+
+async function predict() {
+  const btn = document.querySelector('.btn-predict');
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+
+  document.getElementById('empty-state').style.display  = 'none';
+  document.getElementById('loading-state').style.display = 'block';
+  document.getElementById('result-card').classList.remove('visible');
+
+  const payload = {
+    cell_id:                 document.getElementById('cell_id').value,
+    sinr_db:                 parseFloat(document.getElementById('sinr_db').value),
+    cqi_mean:                parseFloat(document.getElementById('cqi_mean').value),
+    bler_dl:                 parseFloat(document.getElementById('bler_dl').value),
+    prb_util_dl:             parseFloat(document.getElementById('prb_util_dl').value),
+    prb_util_ul:             parseFloat(document.getElementById('prb_util_ul').value),
+    ho_success_rate:         parseFloat(document.getElementById('ho_success_rate').value),
+    abnormal_release_ratio:  parseFloat(document.getElementById('abnormal_release_ratio').value),
+    rlf_count:               parseFloat(document.getElementById('rlf_count').value),
+    dl_tput_user:            parseFloat(document.getElementById('dl_tput_user').value),
+    timestamp:               new Date().toISOString()
+  };
+
+  try {
+    const res  = await fetch(`${API}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    renderResult(data);
+  } catch (e) {
+    alert('API connection failed. Make sure uvicorn is running on port 8000.');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '▶ Run Health Assessment';
+  document.getElementById('loading-state').style.display = 'none';
+}
+
+function renderResult(d) {
+  // Banner
+  const banner = document.getElementById('health-banner');
+  banner.className = `health-banner band-${d.health_band}`;
+  document.getElementById('health-icon').textContent     = BAND_ICONS[d.health_band] || '⚪';
+  document.getElementById('health-band-text').textContent = d.health_band.toUpperCase();
+  document.getElementById('health-score-val').textContent = d.health_score.toFixed(1);
+  document.getElementById('result-cell-id').textContent   = d.cell_id || '—';
+  document.getElementById('result-time').textContent      = new Date().toLocaleTimeString();
+
+  // Flags
+  const flagList = document.getElementById('flag-list');
+  if (d.flags && d.flags.length > 0) {
+    flagList.innerHTML = d.flags.map(f =>
+      `<div class="flag-item"><div class="flag-dot"></div>${f}</div>`
+    ).join('');
+  } else {
+    flagList.innerHTML = '<div class="flag-none">✓ All KPIs within threshold</div>';
+  }
+
+  // Anomaly
+  const isAnom = d.anomaly_label === 'anomalous';
+  document.getElementById('anomaly-badge').innerHTML =
+    `<div class="anomaly-badge ${isAnom ? 'anomaly-anomalous' : 'anomaly-normal'}">
+      ${isAnom ? '⚠️ Anomalous pattern' : '✓ Normal pattern'}
+    </div>`;
+  document.getElementById('anomaly-score-text').textContent =
+    `Anomaly score: ${d.anomaly_score} ${isAnom ? '(unusual KPI combination detected)' : '(within expected range)'}`;
+
+  // Action
+  document.getElementById('action-text').textContent = d.recommended_action;
+  const pb = document.getElementById('priority-badge');
+  pb.textContent  = d.priority.toUpperCase();
+  pb.className    = `priority-badge priority-${d.priority}`;
+
+  // Confidence
+  const pct = Math.round(d.confidence * 100);
+  document.getElementById('conf-bar').style.width = pct + '%';
+  document.getElementById('conf-pct').textContent = pct + '%';
+
+  document.getElementById('result-card').classList.add('visible');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Network KPI Analyzer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+  .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 32px; display: flex; align-items: center; gap: 16px; }
+  .header-logo { width: 36px; height: 36px; background: #1f6feb; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .header-title { font-size: 18px; font-weight: 600; }
+  .header-sub { font-size: 13px; color: #8b949e; margin-top: 2px; }
+  .nav-link { margin-left: auto; color: #8b949e; font-size: 13px; text-decoration: none; padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; }
+  .nav-link:hover { color: #e6edf3; border-color: #8b949e; }
+  .container { max-width: 1300px; margin: 0 auto; padding: 24px 32px; }
+  .upload-section { margin-bottom: 28px; }
+  .upload-zone { border: 2px dashed #30363d; border-radius: 12px; padding: 48px; text-align: center; cursor: pointer; transition: all 0.2s; background: #161b22; }
+  .upload-zone:hover, .upload-zone.dragover { border-color: #1f6feb; background: #0d1f3a; }
+  .upload-icon { font-size: 48px; margin-bottom: 16px; }
+  .upload-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+  .upload-sub { font-size: 13px; color: #8b949e; margin-bottom: 20px; }
+  .upload-btn { background: #1f6feb; border: none; color: white; padding: 10px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  input[type=file] { display: none; }
+  .template-bar { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 20px; display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+  .template-text { font-size: 13px; color: #8b949e; flex: 1; }
+  .template-btn { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 7px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+
+  /* Summary */
+  .summary-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; margin-bottom: 6px; }
+  .summary-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; user-select: none; }
+  .summary-card:hover { border-color: #8b949e; transform: translateY(-1px); }
+  .summary-card.active { border-width: 2px; transform: translateY(-2px); }
+  .summary-card.active.card-total    { border-color: #e6edf3; background: #1c2128; }
+  .summary-card.active.card-critical { border-color: #f85149; background: #2a0000; }
+  .summary-card.active.card-degraded { border-color: #f0883e; background: #2a1200; }
+  .summary-card.active.card-watch    { border-color: #d29922; background: #2a1f00; }
+  .summary-card.active.card-healthy  { border-color: #3fb950; background: #0a2a14; }
+  .summary-card.active.card-perfect  { border-color: #58a6ff; background: #0a1f3a; }
+  .summary-card.active.card-anomalous{ border-color: #bc8cff; background: #1a0a2a; }
+  .summary-card.dimmed { opacity: 0.4; }
+  .summary-val { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+  .summary-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.6px; }
+  .summary-hint { font-size: 10px; color: #484f58; margin-top: 4px; }
+  .c-total    { color: #e6edf3; }
+  .c-critical { color: #f85149; }
+  .c-degraded { color: #f0883e; }
+  .c-watch    { color: #d29922; }
+  .c-healthy  { color: #3fb950; }
+  .c-perfect  { color: #58a6ff; }
+  .c-anomalous{ color: #bc8cff; }
+  .period-info { font-size: 12px; color: #484f58; text-align: right; margin-bottom: 14px; margin-top: 4px; }
+
+  .filter-banner { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; display: none; align-items: center; gap: 10px; font-size: 13px; }
+  .filter-banner.visible { display: flex; }
+  .filter-banner-text { flex: 1; color: #8b949e; }
+  .filter-banner-text strong { color: #e6edf3; }
+  .clear-filter-btn { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+
+  .section-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .worst-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 28px; }
+  .worst-card { background: #161b22; border-radius: 10px; padding: 18px; border-left: 4px solid #30363d; cursor: pointer; transition: background 0.15s; }
+  .worst-card:hover { background: #1c2128; }
+  .worst-rank { font-size: 11px; color: #8b949e; margin-bottom: 6px; }
+  .worst-cell-id { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .worst-band { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+  .worst-score { font-size: 13px; color: #8b949e; margin-bottom: 8px; }
+  .worst-flags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .flag-chip { background: #21262d; border: 1px solid #30363d; border-radius: 4px; padding: 2px 7px; font-size: 11px; color: #8b949e; }
+  .worst-action { font-size: 12px; color: #8b949e; border-top: 1px solid #21262d; padding-top: 8px; margin-top: 4px; }
+
+  .table-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; margin-bottom: 28px; }
+  .table-header { padding: 14px 20px; border-bottom: 1px solid #30363d; }
+  .table-header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .table-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .filter-select { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 7px 10px; color: #e6edf3; font-size: 13px; cursor: pointer; }
+  .filter-toggle { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 7px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+  .filter-toggle.active { background: #2a1a3a; border-color: #bc8cff; color: #bc8cff; }
+  .table-search { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 7px 12px; color: #e6edf3; font-size: 13px; width: 200px; }
+  .table-search:focus { outline: none; border-color: #1f6feb; }
+  .table-count { font-size: 12px; color: #8b949e; margin-left: auto; }
+  .export-btn { background: #21262d; border: 1px solid #30363d; color: #e6edf3; padding: 7px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #21262d; padding: 10px 16px; text-align: left; font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.6px; cursor: pointer; user-select: none; white-space: nowrap; }
+  th:hover { color: #e6edf3; }
+  td { padding: 10px 16px; border-bottom: 1px solid #21262d; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr.clickable-row { cursor: pointer; }
+  tr.clickable-row:hover td { background: #1c2128; }
+  .band-pill { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .band-critical { background: #4a0000; color: #f85149; }
+  .band-degraded { background: #3a1a00; color: #f0883e; }
+  .band-watch    { background: #3a2a00; color: #d29922; }
+  .band-healthy  { background: #0a2a14; color: #3fb950; }
+  .band-perfect  { background: #0a1f3a; color: #58a6ff; }
+  .anom-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .anom-anomalous { background: #2a1a3a; color: #bc8cff; }
+  .anom-normal    { background: #1a2a1a; color: #3fb950; }
+  .score-bar-bg { width: 80px; height: 6px; background: #21262d; border-radius: 3px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .score-bar-fill { height: 6px; border-radius: 3px; }
+  .priority-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-critical { background: #f85149; }
+  .dot-high     { background: #f0883e; }
+  .dot-medium   { background: #d29922; }
+  .dot-low      { background: #3fb950; }
+  .dot-none     { background: #484f58; }
+  .no-results { text-align: center; padding: 40px; color: #484f58; font-size: 14px; }
+  .click-hint { font-size: 11px; color: #484f58; text-align: center; padding: 6px; border-top: 1px solid #21262d; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .modal-overlay.visible { opacity: 1; pointer-events: all; }
+  .modal { background: #161b22; border: 1px solid #30363d; border-radius: 14px; width: 100%; max-width: 750px; max-height: 90vh; overflow-y: auto; transform: translateY(10px); transition: transform 0.2s; }
+  .modal-overlay.visible .modal { transform: translateY(0); }
+  .modal-header { padding: 20px 24px 16px; border-bottom: 1px solid #30363d; display: flex; align-items: flex-start; gap: 16px; }
+  .modal-band-badge { padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; margin-top: 2px; }
+  .modal-cell-name { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .modal-subtitle { font-size: 13px; color: #8b949e; }
+  .modal-close { margin-left: auto; background: none; border: none; color: #8b949e; font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 6px; flex-shrink: 0; }
+  .modal-close:hover { color: #e6edf3; background: #21262d; }
+  .modal-body { padding: 20px 24px; }
+  .modal-section-title { font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; margin-top: 20px; }
+  .modal-section-title:first-child { margin-top: 0; }
+
+  .kpi-table { width: 100%; border-collapse: collapse; }
+  .kpi-table th { background: #21262d; padding: 8px 12px; font-size: 11px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.6px; text-align: left; cursor: default; }
+  .kpi-table td { padding: 10px 12px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: middle; }
+  .kpi-table tr:last-child td { border-bottom: none; }
+  .kpi-table tr.flagged td { background: #1a0a00; }
+  .kpi-table tr.flagged td:first-child { border-left: 3px solid #f85149; }
+  .kpi-status-ok   { color: #3fb950; font-weight: 600; }
+  .kpi-status-fail { color: #f85149; font-weight: 600; }
+  .kpi-value-cell { font-weight: 700; font-size: 14px; }
+  .kpi-value-flagged { color: #f85149; }
+  .kpi-value-ok      { color: #3fb950; }
+  .kpi-value-monitor { color: #e6edf3; }
+  .kpi-gauge-bg { width: 100%; height: 6px; background: #21262d; border-radius: 3px; margin-top: 4px; }
+  .kpi-gauge-fill { height: 6px; border-radius: 3px; }
+
+  /* Trend */
+  .trend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+  .trend-card { background: #0d1117; border: 1px solid #21262d; border-radius: 8px; padding: 12px; }
+  .trend-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .trend-label { font-size: 12px; font-weight: 600; color: #e6edf3; }
+  .trend-stats { display: flex; justify-content: space-between; font-size: 11px; color: #484f58; margin-top: 6px; }
+  .trend-loading { text-align: center; padding: 20px; color: #484f58; font-size: 13px; }
+  .trend-spinner { width: 20px; height: 20px; border: 2px solid #30363d; border-top-color: #1f6feb; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; margin-right: 8px; vertical-align: middle; }
+
+  .anomaly-box { border-radius: 8px; padding: 14px 16px; margin-bottom: 4px; }
+  .anomaly-box.normal    { background: #0a2a14; border: 1px solid #3fb950; }
+  .anomaly-box.anomalous { background: #2a1a3a; border: 1px solid #bc8cff; }
+  .anomaly-box-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .anomaly-box.normal    .anomaly-box-title { color: #3fb950; }
+  .anomaly-box.anomalous .anomaly-box-title { color: #bc8cff; }
+  .anomaly-reason { font-size: 12px; color: #8b949e; margin-top: 4px; padding-left: 12px; border-left: 2px solid #bc8cff; }
+  .action-box-modal { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; }
+  .action-text-modal { font-size: 14px; color: #e6edf3; margin-bottom: 8px; }
+  .priority-badge-modal { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+
+  .hidden { display: none; }
+  .loading-state { text-align: center; padding: 60px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid #30363d; border-top-color: #1f6feb; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-box { background: #2a0000; border: 1px solid #f85149; border-radius: 8px; padding: 16px 20px; color: #f85149; font-size: 14px; margin-bottom: 20px; }
+  .border-critical { border-left-color: #f85149; }
+  .border-degraded { border-left-color: #f0883e; }
+  .border-watch    { border-left-color: #d29922; }
+  .border-healthy  { border-left-color: #3fb950; }
+  .border-perfect  { border-left-color: #58a6ff; }
+</style>
+</head>
+<body>
+
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <span class="modal-band-badge" id="modal-band-badge"></span>
+      <div>
+        <div class="modal-cell-name" id="modal-cell-name"></div>
+        <div class="modal-subtitle" id="modal-subtitle"></div>
+      </div>
+      <button class="modal-close" onclick="closeModalDirect()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<div class="header">
+  <div class="header-logo">📊</div>
+  <div>
+    <div class="header-title">Network KPI Analyzer</div>
+    <div class="header-sub">Upload KPI export — ranked health assessment per unique cell with 14-day trends</div>
+  </div>
+  <a class="nav-link" href="noc_dashboard.html">← Single cell tool</a>
+</div>
+
+<div class="container">
+  <div class="template-bar">
+    <span style="font-size:16px">📋</span>
+    <div class="template-text">Upload any OSS export — columns auto-detected. Multi-period files show 14-day trend charts per cell.</div>
+    <button class="template-btn" onclick="downloadTemplate()">⬇ Download template CSV</button>
+  </div>
+
+  <div class="upload-section" id="upload-section">
+    <div class="upload-zone" id="upload-zone"
+         ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+         onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📁</div>
+      <div class="upload-title">Drop your KPI file here</div>
+      <div class="upload-sub">Supports CSV and Excel · Multi-period files automatically grouped by unique cell</div>
+      <button class="upload-btn" onclick="event.stopPropagation(); document.getElementById('file-input').click()">Browse file</button>
+      <input type="file" id="file-input" accept=".csv,.xlsx,.xls" onchange="handleFile(this.files[0])">
+    </div>
+  </div>
+
+  <div class="error-box hidden" id="error-box"></div>
+  <div class="loading-state hidden" id="loading-state">
+    <div class="spinner"></div>
+    <div style="color:#8b949e;font-size:14px">Grouping by unique cell and computing trends...</div>
+  </div>
+
+  <div class="hidden" id="results-section">
+    <div class="summary-grid" id="summary-grid"></div>
+    <div class="period-info" id="period-info"></div>
+
+    <div class="filter-banner" id="filter-banner">
+      <span style="font-size:14px">🔍</span>
+      <div class="filter-banner-text">Showing: <strong id="filter-banner-text"></strong></div>
+      <button class="clear-filter-btn" onclick="clearAllFilters()">✕ Show all cells</button>
+    </div>
+
+    <div id="worst-section">
+      <div class="section-title">🔴 Worst cells — click any card for 14-day trend</div>
+      <div class="worst-grid" id="worst-grid"></div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-header">
+        <div class="table-header-top">
+          <div class="section-title" style="margin:0">📋 All cells — click any row for KPI breakdown + trend</div>
+          <div style="display:flex;gap:10px">
+            <button class="export-btn" onclick="exportCSV()">⬇ Export results</button>
+            <button class="export-btn" onclick="resetUpload()">↩ New upload</button>
+          </div>
+        </div>
+        <div class="table-filters">
+          <select class="filter-select" id="band-filter" onchange="applyFilters()">
+            <option value="">All health bands</option>
+            <option value="critical">Critical only</option>
+            <option value="degraded">Degraded only</option>
+            <option value="watch">Watch only</option>
+            <option value="healthy">Healthy only</option>
+            <option value="perfect">Perfect only</option>
+          </select>
+          <select class="filter-select" id="flag-filter" onchange="applyFilters()">
+            <option value="0">All flag counts</option>
+            <option value="1">1+ flags</option>
+            <option value="2">2+ flags</option>
+            <option value="3">3+ flags</option>
+          </select>
+          <button class="filter-toggle" id="anomaly-toggle" onclick="toggleAnomalyFilter()">⚠️ Anomalous only</button>
+          <input class="table-search" id="table-search" placeholder="🔍 Search cell ID..." oninput="applyFilters()">
+          <div class="table-count" id="table-count"></div>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortTable('rank')">Rank ↕</th>
+            <th onclick="sortTable('cell_id')">Cell ID ↕</th>
+            <th onclick="sortTable('health_band')">Health band ↕</th>
+            <th onclick="sortTable('health_score')">Score ↕</th>
+            <th onclick="sortTable('flag_count')">Flags ↕</th>
+            <th onclick="sortTable('anomaly_label')">Anomaly ↕</th>
+            <th onclick="sortTable('priority')">Priority ↕</th>
+            <th>Recommended action</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+      <div class="click-hint">💡 Click any row to see detailed KPI analysis + 14-day trend charts</div>
+    </div>
+  </div>
+</div>
+<script>
+const API = 'http://localhost:8000';
+let allResults       = [];
+let sortCol          = 'rank';
+let sortAsc          = true;
+let activeCardFilter = null;
+let anomalyFilterOn  = false;
+
+const BAND_COLORS     = { critical:'#f85149', degraded:'#f0883e', watch:'#d29922', healthy:'#3fb950', perfect:'#58a6ff' };
+const PRIORITY_COLORS = { critical:'#4a0000|#f85149', high:'#3a1a00|#f0883e', medium:'#3a2a00|#d29922', low:'#0a2a14|#3fb950', none:'#1a1a1a|#484f58' };
+
+function handleDragOver(e) { e.preventDefault(); document.getElementById('upload-zone').classList.add('dragover'); }
+function handleDragLeave(e) { document.getElementById('upload-zone').classList.remove('dragover'); }
+function handleDrop(e) { e.preventDefault(); document.getElementById('upload-zone').classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }
+
+async function handleFile(file) {
+  if (!file) return;
+  if (!file.name.match(/\.(csv|xlsx|xls)$/i)) { showError('Please upload a CSV or Excel file.'); return; }
+  showLoading(true); hideError();
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const res  = await fetch(`${API}/predict/upload`, { method:'POST', body:fd });
+    const data = await res.json();
+    if (data.error) { showError(data.error); showLoading(false); return; }
+    allResults = data.cells;
+    renderResults(data);
+    showLoading(false);
+    document.getElementById('upload-section').classList.add('hidden');
+    document.getElementById('results-section').classList.remove('hidden');
+  } catch(e) { showError('API connection failed. Make sure the server is running.'); showLoading(false); }
+}
+
+function renderResults(data) {
+  renderSummary(data);
+  renderWorstCells(data.cells.slice(0,3));
+  applyFilters();
+}
+
+function renderSummary(data) {
+  const cards = [
+    { cls:'card-total',    val:data.total_cells, label:'Unique cells',  color:'c-total',    filter:null,        hint:`${(data.total_rows||data.total_cells).toLocaleString()} rows · ${data.periods||1} periods` },
+    { cls:'card-critical', val:data.critical,    label:'Critical',      color:'c-critical', filter:'critical',  hint:'Click to filter' },
+    { cls:'card-degraded', val:data.degraded,    label:'Degraded',      color:'c-degraded', filter:'degraded',  hint:'Click to filter' },
+    { cls:'card-watch',    val:data.watch,        label:'Watch',         color:'c-watch',    filter:'watch',     hint:'Click to filter' },
+    { cls:'card-healthy',  val:data.healthy,      label:'Healthy',       color:'c-healthy',  filter:'healthy',   hint:'Click to filter' },
+    { cls:'card-perfect',  val:data.perfect,      label:'Perfect',       color:'c-perfect',  filter:'perfect',   hint:'Click to filter' },
+    { cls:'card-anomalous',val:data.anomalous,    label:'Anomalous',     color:'c-anomalous',filter:'anomalous', hint:'Click to filter' },
+  ];
+  document.getElementById('summary-grid').innerHTML = cards.map(c => `
+    <div class="summary-card ${c.cls}" onclick="toggleCardFilter('${c.filter}','${c.cls}')">
+      <div class="summary-val ${c.color}">${c.val.toLocaleString()}</div>
+      <div class="summary-label">${c.label}</div>
+      <div class="summary-hint">${c.hint}</div>
+    </div>`).join('');
+  const pi = document.getElementById('period-info');
+  pi.textContent = data.periods > 1
+    ? `Health scores from latest period · Date range: ${data.date_range||'N/A'} · ${data.periods} periods × ${data.total_cells} cells = ${(data.total_rows||0).toLocaleString()} rows`
+    : '';
+}
+
+function renderWorstCells(cells) {
+  document.getElementById('worst-grid').innerHTML = cells.map(c => `
+    <div class="worst-card border-${c.health_band}" onclick="openModal('${c.cell_id}')">
+      <div class="worst-rank">Rank #${c.rank} — click for 14-day trend</div>
+      <div class="worst-cell-id">${c.cell_id}</div>
+      <span class="worst-band band-${c.health_band}">${c.health_band.toUpperCase()}</span>
+      <div class="worst-score">Score: <strong style="color:${BAND_COLORS[c.health_band]}">${c.health_score}</strong> &nbsp;|&nbsp; ${c.flag_count} flags</div>
+      <div class="worst-flags">${c.flags.map(f=>`<span class="flag-chip">${f}</span>`).join('')}</div>
+      <div class="worst-action">→ ${c.recommended_action}</div>
+    </div>`).join('');
+}
+
+async function openModal(cellId) {
+  const c = allResults.find(r => r.cell_id === cellId);
+  if (!c) return;
+  showModalBase(c);
+  document.getElementById('trend-section').innerHTML = `
+    <div class="modal-section-title">14-day KPI trend</div>
+    <div class="trend-loading"><span class="trend-spinner"></span> Loading trend data...</div>`;
+  document.getElementById('modal-overlay').classList.add('visible');
+  document.body.style.overflow = 'hidden';
+  try {
+    const res  = await fetch(`${API}/cell/${encodeURIComponent(cellId)}`);
+    const full = await res.json();
+    if (full.trend && Object.keys(full.trend).length > 0) {
+      renderTrendCharts(full.trend);
+    } else {
+      document.getElementById('trend-section').innerHTML =
+        '<div class="modal-section-title">14-day KPI trend</div>' +
+        '<div class="trend-loading" style="color:#484f58">No trend data available</div>';
+    }
+  } catch(e) {
+    document.getElementById('trend-section').innerHTML =
+      '<div class="modal-section-title">14-day KPI trend</div>' +
+      '<div class="trend-loading" style="color:#484f58">Could not load trend data</div>';
+  }
+}
+
+function showModalBase(c) {
+  const [bg,fg] = (PRIORITY_COLORS[c.priority]||'#1a1a1a|#8b949e').split('|');
+  document.getElementById('modal-band-badge').textContent = c.health_band.toUpperCase();
+  document.getElementById('modal-band-badge').style.cssText = `background:${bg};color:${fg};padding:6px 14px;border-radius:20px;font-size:13px;font-weight:700;`;
+  document.getElementById('modal-cell-name').textContent = c.cell_id;
+  document.getElementById('modal-subtitle').textContent  =
+    `Score: ${c.health_score}  ·  ${c.flag_count} flags  ·  Rank #${c.rank}  ·  ${c.period_count||1} periods`;
+  let html = '';
+  html += `<div class="modal-section-title">KPI analysis — latest period vs thresholds</div>
+  <table class="kpi-table"><thead><tr>
+    <th>KPI</th><th>Current value</th><th>Threshold</th><th>Status</th><th>Gauge</th>
+  </tr></thead><tbody>`;
+  if (c.kpi_detail) {
+    c.kpi_detail.forEach(kpi => {
+      const rowCls = kpi.flagged ? 'flagged' : '';
+      const valCls = kpi.flagged ? 'kpi-value-flagged' : kpi.threshold===null ? 'kpi-value-monitor' : 'kpi-value-ok';
+      const status = kpi.threshold===null ? '<span style="color:#484f58">Monitor</span>'
+                   : kpi.flagged ? '<span class="kpi-status-fail">❌ Flagged</span>'
+                   : '<span class="kpi-status-ok">✓ OK</span>';
+      let gW = 0, gC = '#3fb950';
+      if (kpi.threshold !== null) {
+        gW = kpi.direction==='above' ? Math.min((kpi.value/(kpi.threshold*1.5))*100,100) : Math.min((kpi.value/(kpi.threshold*2))*100,100);
+        gC = kpi.flagged ? '#f85149' : '#3fb950';
+      }
+      html += `<tr class="${rowCls}">
+        <td>${kpi.kpi}</td>
+        <td class="kpi-value-cell"><span class="${valCls}">${kpi.value}${kpi.unit}</span></td>
+        <td style="color:#8b949e;font-size:12px">${kpi.threshold_str}</td>
+        <td>${status}</td>
+        <td style="min-width:80px"><div class="kpi-gauge-bg"><div class="kpi-gauge-fill" style="width:${gW}%;background:${gC}"></div></div></td>
+      </tr>`;
+    });
+  }
+  html += `</tbody></table>`;
+  html += `<div id="trend-section"></div>`;
+  const isAnom = c.anomaly_label === 'anomalous';
+  html += `<div class="modal-section-title">Anomaly detection</div>
+  <div class="anomaly-box ${c.anomaly_label}">
+    <div class="anomaly-box-title">${isAnom ? '⚠️ Anomalous KPI pattern detected' : '✓ Normal KPI pattern'}</div>
+    <div style="font-size:12px;color:#8b949e">Score: ${c.anomaly_score}</div>
+    ${(c.anomaly_reasons||[]).map(r=>`<div class="anomaly-reason">${r}</div>`).join('')}
+  </div>`;
+  html += `<div class="modal-section-title">Recommended action</div>
+  <div class="action-box-modal">
+    <div class="action-text-modal">${c.recommended_action}</div>
+    <span class="priority-badge-modal" style="background:${bg};color:${fg}">Priority: ${c.priority.toUpperCase()}</span>
+    <span style="font-size:12px;color:#8b949e;margin-left:10px">Confidence: ${Math.round(c.confidence*100)}%</span>
+  </div>`;
+  document.getElementById('modal-body').innerHTML = html;
+}
+
+function renderTrendCharts(trend) {
+  const TREND_KPIS = [
+    {key:'sinr_db',                label:'SINR',             unit:'dB'},
+    {key:'cqi_mean',               label:'CQI Mean',         unit:''},
+    {key:'ho_success_rate',        label:'HO Success Rate',  unit:'%'},
+    {key:'bler_dl',                label:'BLER DL',          unit:'%'},
+    {key:'prb_util_dl',            label:'PRB Util DL',      unit:'%'},
+    {key:'abnormal_release_ratio', label:'Abnormal Release', unit:'%'},
+  ];
+  let html = `<div class="modal-section-title">14-day KPI trend</div><div class="trend-grid">`;
+  TREND_KPIS.forEach(kpi => {
+    const t = trend[kpi.key];
+    if (!t || !t.values || !t.values.length) return;
+    const tColor = t.trend==='degrading' ? '#f85149' : t.trend==='improving' ? '#3fb950' : '#8b949e';
+    const tIcon  = t.trend==='degrading' ? '↘ degrading' : t.trend==='improving' ? '↗ improving' : '→ stable';
+    const W=280, H=50, pad=6;
+    const nonNull = t.values.filter(v=>v!==null&&v!==undefined);
+    if (!nonNull.length) return;
+    const minV=Math.min(...nonNull), maxV=Math.max(...nonNull), range=maxV-minV||1;
+    const n=t.values.length;
+    const points=[], circles=[];
+    t.values.forEach((v,i) => {
+      if (v===null||v===undefined) return;
+      const x=pad+(i/(n-1||1))*(W-pad*2);
+      const y=H-pad-((v-minV)/range)*(H-pad*2);
+      points.push(`${x},${y}`);
+      circles.push(`<circle cx="${x}" cy="${y}" r="2.5" fill="${tColor}"/>`);
+    });
+    const dl = t.dates ? t.dates.length : 0;
+    const dateTicksSVG = dl > 0 ? [
+      `<text x="${pad}" y="${H+14}" font-size="9" fill="#484f58" text-anchor="start">${t.dates[0]}</text>`,
+      `<text x="${W/2}" y="${H+14}" font-size="9" fill="#484f58" text-anchor="middle">${t.dates[Math.floor(dl/2)]}</text>`,
+      `<text x="${W-pad}" y="${H+14}" font-size="9" fill="#484f58" text-anchor="end">${t.dates[dl-1]}</text>`,
+    ].join('') : '';
+    html += `
+      <div class="trend-card">
+        <div class="trend-card-header">
+          <span class="trend-label">${kpi.label}</span>
+          <span style="font-size:12px;color:${tColor}">${tIcon}</span>
+        </div>
+        <svg width="100%" viewBox="0 0 ${W} ${H+20}" style="display:block">
+          <polyline points="${points.join(' ')}" fill="none" stroke="${tColor}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+          ${circles.join('')}
+          ${dateTicksSVG}
+        </svg>
+        <div class="trend-stats">
+          <span>min ${t.min}${kpi.unit}</span>
+          <span>avg ${t.mean}${kpi.unit}</span>
+          <span>max ${t.max}${kpi.unit}</span>
+        </div>
+      </div>`;
+  });
+  html += `</div>`;
+  document.getElementById('trend-section').innerHTML = html;
+}
+
+function closeModal(e) { if (e.target===document.getElementById('modal-overlay')) closeModalDirect(); }
+function closeModalDirect() { document.getElementById('modal-overlay').classList.remove('visible'); document.body.style.overflow=''; }
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeModalDirect(); });
+
+function toggleCardFilter(filter, cardCls) {
+  const cards = document.querySelectorAll('.summary-card');
+  if (!filter || filter === activeCardFilter) {
+    activeCardFilter=null; cards.forEach(c=>c.classList.remove('active','dimmed'));
+    document.getElementById('band-filter').value=''; anomalyFilterOn=false;
+    document.getElementById('anomaly-toggle').classList.remove('active');
+  } else {
+    activeCardFilter=filter;
+    cards.forEach(c=>{ c.classList.remove('active','dimmed'); c.classList.add(c.classList.contains(cardCls)?'active':'dimmed'); });
+    if (filter==='anomalous') { anomalyFilterOn=true; document.getElementById('anomaly-toggle').classList.add('active'); document.getElementById('band-filter').value=''; }
+    else { document.getElementById('band-filter').value=filter; anomalyFilterOn=false; document.getElementById('anomaly-toggle').classList.remove('active'); }
+  }
+  applyFilters();
+}
+
+function toggleAnomalyFilter() {
+  anomalyFilterOn=!anomalyFilterOn; document.getElementById('anomaly-toggle').classList.toggle('active',anomalyFilterOn);
+  const cards=document.querySelectorAll('.summary-card');
+  if (anomalyFilterOn) { activeCardFilter='anomalous'; cards.forEach(c=>{ c.classList.remove('active','dimmed'); c.classList.add(c.classList.contains('card-anomalous')?'active':'dimmed'); }); }
+  else { activeCardFilter=null; cards.forEach(c=>c.classList.remove('active','dimmed')); }
+  applyFilters();
+}
+
+function clearAllFilters() {
+  activeCardFilter=null; anomalyFilterOn=false;
+  document.getElementById('band-filter').value=''; document.getElementById('flag-filter').value='0';
+  document.getElementById('table-search').value=''; document.getElementById('anomaly-toggle').classList.remove('active');
+  document.querySelectorAll('.summary-card').forEach(c=>c.classList.remove('active','dimmed'));
+  applyFilters();
+}
+
+function applyFilters() {
+  const band=document.getElementById('band-filter').value;
+  const flagMin=parseInt(document.getElementById('flag-filter').value)||0;
+  const q=document.getElementById('table-search').value.toLowerCase();
+  let f=[...allResults];
+  if (band)            f=f.filter(c=>c.health_band===band);
+  if (anomalyFilterOn) f=f.filter(c=>c.anomaly_label==='anomalous');
+  if (flagMin>0)       f=f.filter(c=>c.flag_count>=flagMin);
+  if (q)               f=f.filter(c=>c.cell_id.toLowerCase().includes(q)||c.health_band.includes(q)||c.priority.includes(q)||(c.flags&&c.flags.join(' ').toLowerCase().includes(q)));
+  updateFilterBanner(f.length,band,flagMin,q);
+  document.getElementById('worst-section').style.display=(band||anomalyFilterOn||flagMin>0||q)?'none':'block';
+  renderTable(f);
+}
+
+function updateFilterBanner(count,band,flagMin,search) {
+  const banner=document.getElementById('filter-banner'); const parts=[];
+  if (band)            parts.push(`band: ${band.toUpperCase()}`);
+  if (anomalyFilterOn) parts.push('anomalous only');
+  if (flagMin>0)       parts.push(`${flagMin}+ flags`);
+  if (search)          parts.push(`"${search}"`);
+  if (parts.length>0) { document.getElementById('filter-banner-text').textContent=`${count.toLocaleString()} cells — ${parts.join(' + ')}`; banner.classList.add('visible'); }
+  else { banner.classList.remove('visible'); }
+}
+
+function sortTable(col) { if(sortCol===col) sortAsc=!sortAsc; else{sortCol=col;sortAsc=true;} applyFilters(); }
+
+function renderTable(cells) {
+  const sorted=[...cells].sort((a,b)=>{
+    const av=a[sortCol],bv=b[sortCol];
+    if(typeof av==='number') return sortAsc?av-bv:bv-av;
+    return sortAsc?String(av).localeCompare(String(bv)):String(bv).localeCompare(String(av));
+  });
+  const maxScore=Math.max(...allResults.map(c=>c.health_score),1);
+  document.getElementById('table-count').textContent=`${sorted.length.toLocaleString()} of ${allResults.length.toLocaleString()} cells`;
+  if (!sorted.length) { document.getElementById('table-body').innerHTML='<tr><td colspan="8"><div class="no-results">No cells match current filters</div></td></tr>'; return; }
+  document.getElementById('table-body').innerHTML=sorted.map(c=>`
+    <tr class="clickable-row" onclick="openModal('${c.cell_id}')">
+      <td style="color:#8b949e;font-weight:600">#${c.rank}</td>
+      <td style="font-weight:600">${c.cell_id}</td>
+      <td><span class="band-pill band-${c.health_band}">${c.health_band}</span></td>
+      <td><span class="score-bar-bg"><span class="score-bar-fill" style="width:${Math.min(c.health_score/maxScore*100,100)}%;background:${BAND_COLORS[c.health_band]||'#484f58'}"></span></span>${c.health_score}</td>
+      <td>${c.flag_count>0?`<span style="color:#f85149;font-weight:600">${c.flag_count}</span>`:'<span style="color:#3fb950">0</span>'}</td>
+      <td><span class="anom-pill anom-${c.anomaly_label}">${c.anomaly_label}</span></td>
+      <td><span class="priority-dot dot-${c.priority}"></span>${c.priority}</td>
+      <td style="color:#8b949e;font-size:12px">${c.recommended_action}</td>
+    </tr>`).join('');
+}
+
+function exportCSV() {
+  const h=['rank','cell_id','health_band','health_score','flag_count','flags','anomaly_label','priority','recommended_action'];
+  const rows=allResults.map(c=>[c.rank,c.cell_id,c.health_band,c.health_score,c.flag_count,'"'+c.flags.join(' | ')+'"',c.anomaly_label,c.priority,'"'+c.recommended_action+'"']);
+  const csv=[h,...rows].map(r=>r.join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='network_health_report.csv'; a.click();
+}
+
+function downloadTemplate() {
+  const t=`cell_id,sinr_db,cqi_mean,bler_dl,prb_util_dl,prb_util_ul,ho_success_rate,abnormal_release_ratio,rlf_count,dl_tput_user
+Cell_0001,18.5,11.2,2.1,35.0,28.0,99.4,5.2,12000,45.6
+Cell_0002,7.2,8.1,8.5,75.0,62.0,96.5,12.0,28000,12.4
+Cell_0003,2.1,5.2,14.5,85.0,72.0,91.0,18.5,67000,3.2`;
+  const blob=new Blob([t],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='kpi_template.csv'; a.click();
+}
+
+function showError(msg) { const b=document.getElementById('error-box'); b.textContent='⚠️ '+msg; b.classList.remove('hidden'); }
+function hideError() { document.getElementById('error-box').classList.add('hidden'); }
+function showLoading(show) { document.getElementById('loading-state').classList.toggle('hidden',!show); }
+function resetUpload() {
+  document.getElementById('results-section').classList.add('hidden');
+  document.getElementById('upload-section').classList.remove('hidden');
+  allResults=[]; activeCardFilter=null; anomalyFilterOn=false;
+}
+</script>
+
+
+</body>
+</html>
