@@ -284,3 +284,140 @@ Open to roles in: AI-RAN · Network Operations AI · Telecom AI Engineering
 ---
 
 *Built during RF Engineer → AI Engineer transition | 2026*
+
+---
+
+## Deployment — Production NOC Tools
+
+Beyond the ML notebooks, this portfolio includes a fully deployed
+AI-powered network operations toolset — a real application stack
+that any NOC team could use today.
+
+### Network Cell Health Monitor API
+`network_health_api.py`
+
+Production REST API built with FastAPI serving the Project 1 ML models.
+Accepts KPI measurements and returns health assessment in milliseconds.
+
+**Endpoints:**
+```
+POST /predict          → Single cell health assessment
+POST /predict/batch    → Multiple cells simultaneously
+POST /predict/upload   → Upload any OSS CSV/Excel export
+GET  /cell/{cell_id}   → Full cell detail with 14-day trend
+GET  /docs             → Auto-generated interactive API documentation
+```
+
+**Key capability — smart column detection:**
+Accepts any OSS export format without reformatting. Auto-detects Nokia,
+Ericsson, and Samsung column naming conventions using keyword matching.
+Columns like `NR PRB util PDSCH (NR_5114a)` are automatically mapped
+to the correct KPI — no template required.
+
+**Stack:** FastAPI · Pydantic · Pandas · Uvicorn
+
+---
+
+### KPI Upload Analyzer
+`kpi_upload_dashboard.html`
+
+Professional NOC dashboard for bulk KPI analysis. Upload any multi-period
+OSS export and get instant ranked health assessment across all unique cells.
+
+**Features:**
+- Auto-detects OSS column names — Nokia, Ericsson, Samsung compatible
+- Groups multi-period data by unique cell — shows 2,038 cells not 26,790 rows
+- Health score ranking — worst cells first with flags and recommended actions
+- Toggle filters — band, anomaly detection, flag count, cell ID search
+- Click any cell → popup with KPI vs threshold table + 14-day sparkline charts
+- Trend direction per KPI — stable / improving / degrading with color coding
+- Export ranked results as CSV report
+- On-demand trend loading — modal opens instantly, charts fetch in background
+
+---
+
+### Single Cell NOC Tool
+`noc_dashboard.html`
+
+Interactive tool for investigating individual cells. Enter KPI values
+manually or load preset scenarios (critical, healthy, watch, anomalous).
+Returns real-time health assessment with flags and recommended actions.
+
+**Presets included:**
+```
+Critical cell   → SINR 2.1dB, CQI 5.2, HO Success 91% — all flags triggered
+Healthy cell    → SINR 18.5dB, CQI 11.2, PRB 35% — zero flags
+Watch cell      → borderline KPIs — partial flags
+Anomalous cell  → looks normal but unusual KPI combination detected
+```
+
+---
+
+### One-Click Launcher
+`Launch_NOC_Tool.bat`
+
+Double-click to launch the entire tool stack — no terminal required.
+Starts the FastAPI backend automatically and opens the dashboard in the browser.
+Press any key to stop cleanly.
+
+```
+Double-click Launch_NOC_Tool.bat
+        ↓
+API starts on localhost:8000
+        ↓
+Dashboard opens at http://localhost:8000/dashboard
+        ↓
+Upload any OSS KPI export
+        ↓
+Instant ranked health assessment with trend charts
+```
+
+---
+
+## Running the Tools
+
+**Requirements:**
+```
+pip install fastapi uvicorn pydantic pandas numpy scikit-learn scipy folium openpyxl
+```
+
+**Start:**
+```
+Double-click Launch_NOC_Tool.bat
+```
+
+Or manually:
+```bash
+uvicorn network_health_api:app --reload
+# Then open kpi_upload_dashboard.html in browser
+```
+
+**API documentation:**
+```
+http://localhost:8000/docs
+```
+
+---
+
+## Repository Structure
+
+```
+Telecom_AI_Portfolio/
+│
+├── kpi_anomaly.ipynb                 Project 1 — Network health monitor
+├── project2_ho_classifier.ipynb      Project 2 — HO failure classifier
+├── project3_coverage_predictor.ipynb Project 3 — Coverage predictor
+│
+├── network_health_api.py             FastAPI backend
+├── kpi_upload_dashboard.html         Bulk KPI upload analyzer
+├── noc_dashboard.html                Single cell NOC tool
+├── launch_noc.py                     Python launcher
+├── Launch_NOC_Tool.bat               One-click Windows launcher
+│
+├── network_health_dashboard.png      Project 1 output
+├── ho_confusion_matrices.png         Project 2 output
+├── coverage_heatmap.png              Project 3 static map
+├── coverage_heatmap.html             Project 3 interactive map
+│
+└── requirements.txt                  Python dependencies
+```
