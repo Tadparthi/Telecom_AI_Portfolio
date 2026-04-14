@@ -14,7 +14,7 @@ actually dealt with in the field.
 ![Dashboard](screenshots/dashboard.png)
 *2,038 unique cells ranked by health score — upload any Nokia/Ericsson/Samsung OSS export*
 
-![Cell Detail](screenshots/cell_detail.png)
+![Cell Detail](screenshots/cell_details.png)
 *Click any cell — KPI vs threshold table + 14-day sparkline trend charts*
 
 ![AI Assistant](screenshots/ai_assistant.png)
