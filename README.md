@@ -198,3 +198,54 @@ requirements.txt
 AI-RAN · Network Operations AI · Telecom AI Engineering roles
 
 *2026*
+
+---
+
+## AI Network Assistant
+
+The tool includes a GPT-4o powered chat assistant embedded directly in
+the dashboard. After uploading a KPI file, click AI Assistant in the
+top right corner and ask questions in plain English.
+
+It has full context of your uploaded network data and can:
+
+**Answer questions about your network:**
+```
+"What are my worst cells right now?"
+"Why is Cell_0319 critical?"
+"How many cells are degrading this week?"
+```
+
+**Explain root causes in RF terms:**
+```
+"Three of my worst cells have both SINR poor and
+abnormal release high — what does that combination
+tell me about the likely root cause?"
+
+→ "When SINR is low but stable and abnormal release
+is trending up together, this pattern typically
+indicates a hardware issue — connector degradation
+or antenna damage — rather than interference.
+Interference would show more variability in SINR
+and affect neighboring cells similarly..."
+```
+
+**Suggest specific parameter changes:**
+```
+"What parameter changes do you recommend for
+my HO failure cells?"
+
+→ "For Cell_1706 — CQI and HO success issues:
+   A3 offset: set to 3dB
+   TTT: increase to 240ms (suburban profile)
+   RSRQ threshold: verify -10 to -14dB range..."
+```
+
+The assistant fetches 14-day trend data on demand when you ask about
+a specific cell — so its analysis reflects the full history, not just
+the latest snapshot.
+
+**Security:** OpenAI API calls are proxied through the FastAPI backend
+using environment variables. The key is never exposed in frontend code.
+
+---
