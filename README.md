@@ -53,10 +53,10 @@ uvicorn network_health_api:app --host 0.0.0.0 --port 8000
 # Go to http://localhost:8000/dashboard in your browser
 ```
 
-**No Nokia data? No problem.**
-A demo CSV file is included — `demo_data.csv`. Upload it to see the
-tool in action with anonymized real network data from a live 5G network.
-
+**No Nokia/Ericsson/Samsung KPI data? No problem.**
+A sample template CSV is included — `kpi_template.csv`. Download it,
+fill in your KPI values, and upload. Or upload any OSS export directly
+— the tool auto-detects Nokia, Ericsson, and Samsung column formats.
 ---
 
 ## What it does
@@ -252,7 +252,6 @@ noc_dashboard.html                 Single cell NOC tool
 Launch_NOC_Tool.bat                One-click Windows launcher
 requirements.txt                   Dependencies
 
-demo_data.csv                      Anonymized 5G network data for testing
 
 screenshots/
   dashboard.png                    Summary cards + ranked cell table
