@@ -8,6 +8,12 @@ import os
 import pandas as pd
 import io
 import uvicorn
+from dotenv import load_dotenv
+import os
+import httpx
+
+load_dotenv()
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 app = FastAPI(
     title="Network Cell Health Monitor API",
@@ -194,7 +200,39 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "version": "1.0.0"}
+@app.post("/chat")
+async def chat_proxy(request: dict):
+    """
+    Proxy OpenAI calls through the backend.
+    Key stays on server — never exposed to browser.
+    """
+    if not OPENAI_API_KEY:
+        return {"error": "OpenAI API key not configured on server"}
 
+    messages  = request.get('messages', [])
+    max_tokens = request.get('max_tokens', 800)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {OPENAI_API_KEY}',
+                    'Content-Type':  'application/json'
+                },
+                json={
+                    'model':       'gpt-4o',
+                    'messages':    messages,
+                    'max_tokens':  max_tokens,
+                    'temperature': 0.3
+                }
+            )
+            return response.json()
+
+    except httpx.TimeoutException:
+        return {"error": "Request timed out"}
+    except Exception as e:
+        return {"error": str(e)}
 @app.post("/predict", response_model=HealthPrediction)
 def predict_health(measurement: CellMeasurement):
     return HealthPrediction(**build_result(measurement))
