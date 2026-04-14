@@ -35,7 +35,7 @@ Drop a CSV or Excel KPI export from any vendor. The tool auto-detects
 column names — Nokia, Ericsson, Samsung — no reformatting needed.
 
 ```
-NR PRB util PDSCH (NR_5114a)           → detected as PRB Util DL
+NR PRB util PDSCH                      → detected as PRB Util DL
 NR Average UE related SINR for PUSCH   → detected as SINR
 NR Intra gNB intra frequency HO ratio  → detected as HO Success Rate
 ```
