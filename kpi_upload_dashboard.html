@@ -191,6 +191,7 @@
     <div class="header-title">Network KPI Analyzer</div>
     <div class="header-sub">Upload KPI export — ranked health assessment per unique cell with 14-day trends</div>
   </div>
+  <a class="nav-link" onclick="toggleChat()" style="cursor:pointer;background:#1f6feb;color:white;border-color:#1f6feb;margin-right:8px">🤖 AI Assistant</a>
   <a class="nav-link" href="noc_dashboard.html">← Single cell tool</a>
 </div>
 
@@ -289,6 +290,9 @@ let sortCol          = 'rank';
 let sortAsc          = true;
 let activeCardFilter = null;
 let anomalyFilterOn  = false;
+const chatHistory = [];
+let chatOpen      = false;
+let chatMaximized = false;
 
 const BAND_COLORS     = { critical:'#f85149', degraded:'#f0883e', watch:'#d29922', healthy:'#3fb950', perfect:'#58a6ff' };
 const PRIORITY_COLORS = { critical:'#4a0000|#f85149', high:'#3a1a00|#f0883e', medium:'#3a2a00|#d29922', low:'#0a2a14|#3fb950', none:'#1a1a1a|#484f58' };
@@ -595,8 +599,380 @@ function resetUpload() {
   document.getElementById('upload-section').classList.remove('hidden');
   allResults=[]; activeCardFilter=null; anomalyFilterOn=false;
 }
-</script>
+// ── AI Assistant ───────────────────────────────────────────
 
+function toggleChat() {
+  chatOpen = !chatOpen;
+  const panel = document.getElementById('chat-panel');
+  panel.style.display = chatOpen ? 'flex' : 'none';
+  if (chatOpen) document.getElementById('chat-input').focus();
+}
+
+function sendSuggestion(text) {
+  document.getElementById('chat-input').value = text;
+  sendMessage();
+}
+
+function getNetworkContext() {
+  if (!allResults || allResults.length === 0) {
+    return "No network data uploaded yet.";
+  }
+
+  const critical  = allResults.filter(c => c.health_band === 'critical');
+  const degraded  = allResults.filter(c => c.health_band === 'degraded');
+  const watch     = allResults.filter(c => c.health_band === 'watch');
+  const anomalous = allResults.filter(c => c.anomaly_label === 'anomalous');
+  const top10     = allResults.slice(0, 10);
+
+  return `
+NETWORK SUMMARY:
+Total unique cells: ${allResults.length}
+Critical: ${critical.length}
+Degraded: ${degraded.length}
+Watch: ${watch.length}
+Anomalous: ${anomalous.length}
+
+TOP 10 WORST CELLS:
+${top10.map(c =>
+  `Cell: ${c.cell_id} | Band: ${c.health_band} | Score: ${c.health_score} | ` +
+  `Flags: ${c.flags.join(', ')||'none'} | Priority: ${c.priority}`
+).join('\n')}
+
+CRITICAL CELLS DETAIL:
+${critical.slice(0,5).map(c =>
+  `${c.cell_id}: score=${c.health_score}, flags=[${c.flags.join(', ')}], ` +
+  `action="${c.recommended_action}"`
+).join('\n')}
+  `.trim();
+}
+
+async function getCellTrend(cellId) {
+  try {
+    const res  = await fetch(`${API}/cell/${encodeURIComponent(cellId)}`);
+    const data = await res.json();
+    if (data.error) return null;
+
+    let trendSummary = `Cell ${cellId} — ${data.health_band.toUpperCase()} (score: ${data.health_score})\n`;
+    trendSummary += `Flags: ${data.flags.join(', ')||'none'}\n`;
+    trendSummary += `Anomaly: ${data.anomaly_label}\n`;
+
+    if (data.trend) {
+      trendSummary += '\n14-DAY TRENDS:\n';
+      for (const [kpi, t] of Object.entries(data.trend)) {
+        if (t && t.values) {
+          trendSummary += `${kpi}: min=${t.min} avg=${t.mean} max=${t.max} trend=${t.trend}\n`;
+          trendSummary += `  values: ${t.values.filter(v=>v!==null).join(' → ')}\n`;
+        }
+      }
+    }
+    return trendSummary;
+  } catch(e) {
+    return null;
+  }
+}
+
+function appendMessage(role, content) {
+  const msgs = document.getElementById('chat-messages');
+  const div  = document.createElement('div');
+  div.style.cssText = `
+    background: ${role === 'user' ? '#1f6feb' : '#21262d'};
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: #e6edf3;
+    line-height: 1.6;
+    max-width: 90%;
+    ${role === 'user' ? 'align-self:flex-end;margin-left:auto;' : ''}
+    white-space: pre-wrap;
+  `;
+  div.textContent = content;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+function appendThinking() {
+  const msgs = document.getElementById('chat-messages');
+  const div  = document.createElement('div');
+  div.id = 'thinking-indicator';
+  div.style.cssText = `
+    background:#21262d;border-radius:10px;
+    padding:12px 14px;font-size:13px;color:#8b949e;
+    line-height:1.6;max-width:90%;
+  `;
+  div.textContent = 'Analyzing your network data...';
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeThinking() {
+  const el = document.getElementById('thinking-indicator');
+  if (el) el.remove();
+}
+
+async function sendMessage() {
+  const input   = document.getElementById('chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  input.value = '';
+  appendMessage('user', message);
+
+  // Check if message mentions a specific cell
+  const cellMatch = message.match(/Cell_\d+/i);
+  let extraContext = '';
+  if (cellMatch) {
+    const trend = await getCellTrend(cellMatch[0]);
+    if (trend) extraContext = '\n\nCELL DETAIL:\n' + trend;
+  }
+
+  const networkContext = getNetworkContext();
+  const systemPrompt = `You are an expert 5G/LTE network operations AI assistant
+with 20 years of RF engineering experience. You have access to real network KPI
+data that has been analyzed by an ML health monitoring system.
+
+Your role:
+1. Answer questions about the network data clearly and concisely
+2. Explain telecom concepts in plain English when asked
+3. Suggest specific parameter changes with exact values when relevant
+4. Identify patterns that might indicate hardware vs software vs configuration issues
+5. Prioritize actions by urgency
+
+When suggesting parameter changes be specific:
+- TTT values: 160ms (highway), 240ms (suburban), 320ms (pedestrian)
+- A3 offset: typically 2-4dB range
+- RSRQ threshold: -10 to -14dB range
+- PRB load balancing thresholds: 70-80%
+
+Current network data:
+${networkContext}
+${extraContext}
+
+Keep responses concise and actionable. Use bullet points for lists.
+Format numbers clearly. Always explain WHY not just WHAT.`;
+
+  chatHistory.push({ role: 'user', content: message });
+  appendThinking();
+
+  try {
+     const response = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...chatHistory
+        ],
+        max_tokens: 800
+      })
+    });
+
+    const data    = await response.json();
+   console.log('API response:', data);
+   const reply = data.choices?.[0]?.message?.content 
+           || data.error 
+           || 'Sorry, I could not get a response.';
+    removeThinking();
+    appendMessage('assistant', reply);
+    chatHistory.push({ role: 'assistant', content: reply });
+
+    // Keep history manageable
+    if (chatHistory.length > 20) chatHistory.splice(0, 2);
+
+  } catch(e) {
+    removeThinking();
+    appendMessage('assistant', 'Connection error. Check your API key and try again.');
+  }
+}
+
+function maximizeChat() {
+  const panel = document.getElementById('chat-panel');
+  const btn   = document.getElementById('maximize-btn');
+
+  chatMaximized = !chatMaximized;
+
+  if (chatMaximized) {
+    panel.style.cssText = `
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      bottom: 20px;
+      width: auto;
+      height: auto;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      z-index: 999;
+      flex-direction: column;
+      overflow: hidden;
+      display: flex;
+    `;
+    btn.textContent = '⛶';
+    btn.title = 'Restore';
+  } else {
+    panel.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 420px;
+      height: 580px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      z-index: 999;
+      flex-direction: column;
+      overflow: hidden;
+      display: flex;
+    `;
+    btn.textContent = '⛶';
+    btn.title = 'Maximize';
+  }
+}
+</script>
+<!-- ── Chat tab button — add to header ──────────────── -->
+<!-- Find your header div and add this link -->
+<a class="nav-link" href="#" onclick="toggleChat()" id="chat-btn"
+   style="background:#1f6feb;color:white;border-color:#1f6feb">
+  🤖 AI Assistant
+</a>
+
+<!-- ── Chat panel ────────────────────────────────────── -->
+<div id="chat-panel" style="
+  position:fixed;
+  bottom:24px;
+  right:24px;
+  width:420px;
+  height:580px;
+  background:#161b22;
+  border:1px solid #30363d;
+  border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  z-index:999;
+  flex-direction:column;
+  overflow:hidden;
+  display:none;
+">
+  <!-- Chat header -->
+  <div style="
+    padding:16px 20px;
+    border-bottom:1px solid #30363d;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:#0d1117;
+  ">
+    <div style="
+      width:32px;height:32px;
+      background:#1f6feb;
+      border-radius:8px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:16px;
+    ">🤖</div>
+    <div>
+      <div style="font-size:14px;font-weight:600;color:#e6edf3">
+        Network AI Assistant
+      </div>
+      <div style="font-size:11px;color:#3fb950">
+        ● Connected to your network data
+      </div>
+    </div>
+    <button onclick="maximizeChat()" id="maximize-btn" style="
+  background:none;border:none;color:#8b949e;
+  font-size:14px;cursor:pointer;padding:4px 8px;
+  border-radius:4px;margin-left:auto;
+" title="Maximize">⛶</button>
+<button onclick="toggleChat()" style="
+  background:none;border:none;color:#8b949e;
+  font-size:18px;cursor:pointer;padding:4px 8px;
+  border-radius:4px;
+" title="Close">✕</button>
+  </div>
+
+  <!-- Messages area -->
+  <div id="chat-messages" style="
+    flex:1;
+    overflow-y:auto;
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  ">
+    <div class="chat-msg assistant" style="
+      background:#21262d;
+      border-radius:10px;
+      padding:12px 14px;
+      font-size:13px;
+      color:#e6edf3;
+      line-height:1.6;
+      max-width:90%;
+    ">
+      Hi! I'm your network AI assistant. I have access to your
+      uploaded KPI data and can help you understand what's happening
+      in your network.<br><br>
+      Try asking me:<br>
+      • "What are my worst cells?"<br>
+      • "Why is Cell_1042 critical?"<br>
+      • "What parameter changes do you recommend?"<br>
+      • "Explain what abnormal release ratio means"
+    </div>
+  </div>
+
+  <!-- Suggested questions -->
+  <div id="chat-suggestions" style="
+    padding:8px 16px;
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    border-top:1px solid #21262d;
+  ">
+    <button onclick="sendSuggestion('What are my top 5 worst cells?')"
+      style="background:#21262d;border:1px solid #30363d;color:#8b949e;
+             padding:4px 10px;border-radius:12px;font-size:11px;cursor:pointer;">
+      Worst cells
+    </button>
+    <button onclick="sendSuggestion('How many critical cells do I have and what should I do?')"
+      style="background:#21262d;border:1px solid #30363d;color:#8b949e;
+             padding:4px 10px;border-radius:12px;font-size:11px;cursor:pointer;">
+      Critical summary
+    </button>
+    <button onclick="sendSuggestion('What parameter changes do you recommend for the degrading cells?')"
+      style="background:#21262d;border:1px solid #30363d;color:#8b949e;
+             padding:4px 10px;border-radius:12px;font-size:11px;cursor:pointer;">
+      Parameter suggestions
+    </button>
+  </div>
+
+  <!-- Input area -->
+  <div style="
+    padding:12px 16px;
+    border-top:1px solid #30363d;
+    display:flex;
+    gap:8px;
+  ">
+    <input id="chat-input"
+      placeholder="Ask about your network..."
+      style="
+        flex:1;
+        background:#0d1117;
+        border:1px solid #30363d;
+        border-radius:8px;
+        padding:8px 12px;
+        color:#e6edf3;
+        font-size:13px;
+        outline:none;
+      "
+      onkeydown="if(event.key==='Enter')sendMessage()"
+    />
+    <button onclick="sendMessage()" style="
+      background:#1f6feb;border:none;color:white;
+      padding:8px 14px;border-radius:8px;
+      font-size:13px;cursor:pointer;font-weight:600;
+    ">Send</button>
+  </div>
+</div>
 
 </body>
 </html>
