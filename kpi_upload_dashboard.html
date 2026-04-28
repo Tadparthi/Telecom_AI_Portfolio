@@ -191,8 +191,16 @@
     <div class="header-title">Network KPI Analyzer</div>
     <div class="header-sub">Upload KPI export — ranked health assessment per unique cell with 14-day trends</div>
   </div>
+  <a class="nav-link" onclick="toggleKB()" id="kb-btn"
+  style="cursor:pointer;background:#0f7b6c;color:white;
+  border-color:#0f7b6c;margin-right:8px">
+  📚 Knowledge Base
+</a>
+  <a class="nav-link" onclick="toggleAgent()" id="agent-btn" style="cursor:pointer;background:#6e40c9;color:white;border-color:#6e40c9;margin-right:8px">🔍 Auto-Investigate</a>
   <a class="nav-link" onclick="toggleChat()" style="cursor:pointer;background:#1f6feb;color:white;border-color:#1f6feb;margin-right:8px">🤖 AI Assistant</a>
   <a class="nav-link" href="noc_dashboard.html">← Single cell tool</a>
+  <a class="nav-link" onclick="toggleBeam()" id="beam-btn"  style="cursor:pointer;background:#1a6b4a;color:white;border-color:#1a6b4a;margin-right:8px">📡 Beam Analyzer
+</a>
 </div>
 
 <div class="container">
@@ -293,10 +301,185 @@ let anomalyFilterOn  = false;
 const chatHistory = [];
 let chatOpen      = false;
 let chatMaximized = false;
+let agentOpen  = false;
+let lastReport = '';
 
 const BAND_COLORS     = { critical:'#f85149', degraded:'#f0883e', watch:'#d29922', healthy:'#3fb950', perfect:'#58a6ff' };
 const PRIORITY_COLORS = { critical:'#4a0000|#f85149', high:'#3a1a00|#f0883e', medium:'#3a2a00|#d29922', low:'#0a2a14|#3fb950', none:'#1a1a1a|#484f58' };
+// ── Agent ──────────────────────────────────────────────────
 
+function toggleAgent() {
+  agentOpen = !agentOpen;
+  const panel   = document.getElementById('agent-panel');
+  const overlay = document.getElementById('agent-overlay');
+  panel.style.display   = agentOpen ? 'flex' : 'none';
+  overlay.style.display = agentOpen ? 'block' : 'none';
+}
+
+function setGoal(text) {
+  document.getElementById('agent-goal').value = text;
+}
+
+async function runAgent() {
+  const goal = document.getElementById('agent-goal').value.trim();
+  if (!goal) return;
+
+  if (!allResults || allResults.length === 0) {
+    showAgentOutput('<div style="color:#f85149;padding:20px;">⚠️ Please upload a KPI file first.</div>');
+    return;
+  }
+  let agentMaximized   = false;
+let stepsExpanded    = false;
+
+function maximizeAgent() {
+  agentMaximized = !agentMaximized;
+  const panel = document.getElementById('agent-panel');
+  const btn   = document.getElementById('agent-max-btn');
+
+  if (agentMaximized) {
+    panel.style.cssText = `
+      display:flex;flex-direction:column;
+      position:fixed;top:20px;left:20px;right:20px;bottom:20px;
+      width:auto;height:auto;max-height:none;
+      background:#161b22;border:1px solid #30363d;
+      border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+      z-index:1001;overflow:hidden;
+    `;
+    btn.title = 'Restore';
+  } else {
+    panel.style.cssText = `
+      display:flex;flex-direction:column;
+      position:fixed;top:50%;left:50%;
+      transform:translate(-50%,-50%);
+      width:700px;max-height:85vh;
+      background:#161b22;border:1px solid #30363d;
+      border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+      z-index:1001;overflow:hidden;
+    `;
+    btn.title = 'Maximize';
+  }
+}
+
+function toggleStepsExpand() {
+  stepsExpanded = !stepsExpanded;
+  const stepsList = document.getElementById('agent-steps-list');
+  const btn       = document.getElementById('steps-expand-btn');
+
+  if (stepsExpanded) {
+    stepsList.style.maxHeight = 'none';
+    stepsList.style.overflow  = 'visible';
+    btn.textContent = '▲ collapse';
+  } else {
+    stepsList.style.maxHeight = '80px';
+    stepsList.style.overflow  = 'hidden';
+    btn.textContent = '▼ expand';
+  }
+}
+
+  // Reset UI
+  const btn = document.getElementById('agent-run-btn');
+  btn.disabled    = true;
+  btn.textContent = '⏳ Investigating...';
+  btn.style.background = '#21262d';
+
+  document.getElementById('agent-steps').style.display = 'block';
+  document.getElementById('agent-steps-list').innerHTML = '';
+  document.getElementById('export-report-btn').style.display = 'none';
+  document.getElementById('agent-status').textContent = 'Agent is planning investigation...';
+
+  showAgentOutput('<div style="text-align:center;color:#8b949e;padding:40px;">🔍 Agent is investigating your network...<br><br><span style="font-size:12px;color:#484f58">This takes 15-30 seconds</span></div>');
+
+  try {
+    const res  = await fetch(`${API}/agent`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ goal, max_steps: 10 })
+    });
+    const data = await res.json();
+
+    // Show steps taken
+    if (data.tool_calls && data.tool_calls.length > 0) {
+      const stepsList = document.getElementById('agent-steps-list');
+      stepsList.innerHTML = data.tool_calls.map(s => `
+        <div style="display:flex;align-items:center;gap:8px;font-size:11px;">
+          <span style="color:#6e40c9;font-weight:600">Step ${s.step}</span>
+          <span style="color:#e6edf3">${s.tool}</span>
+          <span style="color:#484f58">${JSON.stringify(s.args)}</span>
+        </div>
+      `).join('');
+    }
+    // Show steps taken
+    if (data.tool_calls && data.tool_calls.length > 0) {
+      const stepsList = document.getElementById('agent-steps-list');
+      stepsList.innerHTML = data.tool_calls.map(s => `
+        <div style="display:flex;align-items:center;gap:8px;font-size:11px;">
+          <span style="color:#6e40c9;font-weight:600">Step ${s.step}</span>
+          <span style="color:#e6edf3">${s.tool}</span>
+          <span style="color:#484f58">${JSON.stringify(s.args)}</span>
+        </div>
+      `).join('');
+
+      // Collapse steps by default
+      stepsList.style.maxHeight = '80px';
+      stepsList.style.overflow  = 'hidden';
+      stepsExpanded = false;
+      document.getElementById('steps-expand-btn').textContent = '▼ expand';
+    }
+
+    // Render report
+    if (data.report) {
+      lastReport = data.report;
+      renderReport(data);
+      document.getElementById('export-report-btn').style.display = 'block';
+      document.getElementById('agent-status').textContent =
+        `Investigation complete — ${data.steps_taken} tool calls`;
+    }
+
+  } catch(e) {
+    showAgentOutput('<div style="color:#f85149;padding:20px;">Connection error. Make sure the server is running.</div>');
+    document.getElementById('agent-status').textContent = 'Error';
+  }
+
+  btn.disabled    = false;
+  btn.textContent = '▶ Investigate';
+  btn.style.background = '#6e40c9';
+}
+
+function renderReport(data) {
+  // Convert markdown-style report to HTML
+  const html = data.report
+    .replace(/### (.*)/g, '<h3 style="color:#e6edf3;font-size:14px;font-weight:700;margin:16px 0 8px;">$1</h3>')
+    .replace(/## (.*)/g,  '<h2 style="color:#e6edf3;font-size:16px;font-weight:700;margin:20px 0 10px;">$1</h2>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
+    .replace(/- (.*)/g,   '<div style="padding:4px 0 4px 16px;color:#c9d1d9;font-size:13px;border-left:2px solid #30363d;margin:4px 0">$1</div>')
+    .replace(/\n\n/g,     '<br><br>')
+    .replace(/\n/g,       '<br>');
+
+  showAgentOutput(`
+    <div style="font-size:13px;line-height:1.7;color:#c9d1d9;">
+      <div style="background:#0d1117;border:1px solid #6e40c9;border-radius:8px;
+        padding:12px 16px;margin-bottom:16px;font-size:12px;color:#8b949e;">
+        🔍 ${data.steps_taken} tool calls executed &nbsp;·&nbsp;
+        Goal: ${data.goal}
+      </div>
+      ${html}
+    </div>
+  `);
+}
+
+function showAgentOutput(html) {
+  document.getElementById('agent-output').innerHTML = html;
+}
+
+function exportReport() {
+  if (!lastReport) return;
+  const blob = new Blob([lastReport], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'network_investigation_report.txt';
+  a.click();
+}
 function handleDragOver(e) { e.preventDefault(); document.getElementById('upload-zone').classList.add('dragover'); }
 function handleDragLeave(e) { document.getElementById('upload-zone').classList.remove('dragover'); }
 function handleDrop(e) { e.preventDefault(); document.getElementById('upload-zone').classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }
@@ -831,6 +1014,630 @@ function maximizeChat() {
     btn.title = 'Maximize';
   }
 }
+// ── Knowledge Base ─────────────────────────────────────────
+let kbOpen       = false;
+let kbMaximized  = false;
+let lastKBQuery  = '';
+
+function toggleKB() {
+  kbOpen = !kbOpen;
+  const panel   = document.getElementById('kb-panel');
+  const overlay = document.getElementById('kb-overlay');
+  panel.style.display   = kbOpen ? 'flex' : 'none';
+  overlay.style.display = kbOpen ? 'block' : 'none';
+  if (kbOpen) document.getElementById('kb-search-input').focus();
+}
+
+function maximizeKB() {
+  kbMaximized = !kbMaximized;
+  const panel = document.getElementById('kb-panel');
+  if (kbMaximized) {
+    panel.style.cssText = `
+      display:flex;flex-direction:column;
+      position:fixed;top:20px;left:20px;right:20px;bottom:20px;
+      width:auto;height:auto;max-height:none;
+      background:#161b22;border:1px solid #30363d;
+      border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+      z-index:1001;overflow:hidden;
+    `;
+  } else {
+    panel.style.cssText = `
+      display:flex;flex-direction:column;
+      position:fixed;top:50%;left:50%;
+      transform:translate(-50%,-50%);
+      width:750px;max-height:88vh;
+      background:#161b22;border:1px solid #30363d;
+      border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+      z-index:1001;overflow:hidden;
+    `;
+  }
+}
+
+function quickKBSearch(text) {
+  document.getElementById('kb-search-input').value = text;
+  searchKB();
+}
+
+async function searchKB() {
+  const query = document.getElementById('kb-search-input').value.trim();
+  if (!query) return;
+
+  lastKBQuery = query;
+  document.getElementById('kb-status').textContent = 'Searching...';
+  document.getElementById('kb-ask-btn').style.display = 'none';
+
+  showKBOutput(`<div style="text-align:center;color:#8b949e;
+    padding:40px;font-size:13px;">🔍 Searching knowledge base...</div>`);
+
+  try {
+    const res  = await fetch(
+      `${API}/rag/search?query=${encodeURIComponent(query)}&limit=5`
+    );
+    const data = await res.json();
+
+    if (data.error) {
+      showKBOutput(`<div style="color:#f85149;padding:20px;">
+        ⚠️ ${data.error}</div>`);
+      return;
+    }
+
+    renderKBResults(data);
+    document.getElementById('kb-ask-btn').style.display = 'block';
+    document.getElementById('kb-status').textContent =
+      `${data.results.length} parameters found · hybrid search`;
+
+  } catch(e) {
+    showKBOutput(`<div style="color:#f85149;padding:20px;">
+      Connection error. Make sure the server is running.</div>`);
+  }
+}
+
+function renderKBResults(data) {
+  const bandColor = {
+    'NRCELL':  '#1f6feb',
+    'NRHOIF':  '#6e40c9',
+    'NRBTS':   '#0f7b6c',
+  };
+
+  let html = `
+    <div style="font-size:12px;color:#484f58;margin-bottom:14px;">
+      Query: <span style="color:#8b949e">"${data.query}"</span>
+      &nbsp;·&nbsp; Method: ${data.method}
+    </div>`;
+
+  data.results.forEach(r => {
+    const moColor = bandColor[r.mo_class] || '#484f58';
+    const hasValue = r.rec_value &&
+      !['n/a', 'na', 'see exception table', 'nan'].includes(
+        r.rec_value.toLowerCase()
+      );
+
+    html += `
+      <div style="background:#0d1117;border:1px solid #21262d;
+        border-radius:10px;padding:14px 16px;margin-bottom:10px;
+        border-left:3px solid ${moColor};">
+
+        <div style="display:flex;align-items:center;
+          justify-content:space-between;margin-bottom:8px;">
+          <div>
+            <span style="font-size:14px;font-weight:600;
+              color:#e6edf3;">${r.parameter}</span>
+            <span style="font-size:11px;color:#484f58;
+              margin-left:8px;">${r.abbrev}</span>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span style="background:${moColor}22;color:${moColor};
+              padding:2px 8px;border-radius:8px;font-size:11px;
+              font-weight:600;">${r.mo_class}</span>
+            <span style="font-size:11px;color:#484f58;">
+              relevance: ${r.relevance}
+            </span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;
+          gap:10px;margin-bottom:8px;">
+          <div style="background:#161b22;border-radius:6px;padding:8px;">
+            <div style="font-size:10px;color:#484f58;
+              margin-bottom:3px;">RECOMMENDED VALUE</div>
+            <div style="font-size:14px;font-weight:700;
+              color:${hasValue ? '#3fb950' : '#d29922'};">
+              ${r.rec_value || 'N/A'}
+            </div>
+          </div>
+          <div style="background:#161b22;border-radius:6px;padding:8px;">
+            <div style="font-size:10px;color:#484f58;
+              margin-bottom:3px;">RANGE</div>
+            <div style="font-size:12px;color:#e6edf3;">
+              ${r.range || 'N/A'}
+            </div>
+          </div>
+          <div style="background:#161b22;border-radius:6px;padding:8px;">
+            <div style="font-size:10px;color:#484f58;
+              margin-bottom:3px;">CATEGORY</div>
+            <div style="font-size:12px;color:#e6edf3;">
+              ${r.category || 'N/A'}
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:12px;color:#8b949e;line-height:1.5;
+          border-top:1px solid #21262d;padding-top:8px;">
+          ${r.full_text.split('\n')
+            .filter(l => l.startsWith('Description:'))
+            .map(l => l.replace('Description:', '').trim())
+            .join('') || ''}
+        </div>
+      </div>`;
+  });
+
+  showKBOutput(html);
+}
+
+async function askKB() {
+  const query = document.getElementById('kb-search-input').value.trim();
+  if (!query) return;
+
+  const btn = document.getElementById('kb-ask-btn');
+  btn.disabled    = true;
+  btn.textContent = '⏳ Asking AI...';
+  document.getElementById('kb-status').textContent = 'Getting AI explanation...';
+
+  try {
+    const res  = await fetch(`${API}/rag/ask`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({question: query})
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      document.getElementById('kb-status').textContent = 'Error: ' + data.error;
+      return;
+    }
+
+    // Prepend AI answer above search results
+    const current = document.getElementById('kb-output').innerHTML;
+    const aiBox   = `
+      <div style="background:#0a1f2a;border:1px solid #1f6feb;
+        border-radius:10px;padding:16px;margin-bottom:16px;">
+        <div style="font-size:11px;color:#1f6feb;font-weight:600;
+          margin-bottom:10px;text-transform:uppercase;letter-spacing:0.6px;">
+          🤖 AI Explanation — grounded in your parameter baseline
+        </div>
+        <div style="font-size:13px;color:#c9d1d9;line-height:1.7;
+          white-space:pre-wrap;">${data.answer}</div>
+        <div style="margin-top:10px;padding-top:10px;
+          border-top:1px solid #21262d;font-size:11px;color:#484f58;">
+          Parameters used: ${data.parameters_used.join(' · ')}
+        </div>
+      </div>
+      ${current}`;
+
+    document.getElementById('kb-output').innerHTML = aiBox;
+    document.getElementById('kb-status').textContent =
+      'AI explanation added · ' + data.parameters_used.length + ' parameters referenced';
+
+  } catch(e) {
+    document.getElementById('kb-status').textContent = 'Connection error';
+  }
+
+  btn.disabled    = false;
+  btn.textContent = '🤖 Ask AI';
+}
+
+function showKBOutput(html) {
+  document.getElementById('kb-output').innerHTML = html;
+}
+// ── Beam Analyzer ──────────────────────────────────────────
+let beamOpen       = false;
+let beamMaximized  = false;
+let beamResults    = [];
+let beamFiltered   = [];
+let beamActiveFilter = null;
+
+function toggleBeam() {
+  beamOpen = !beamOpen;
+  const panel   = document.getElementById('beam-panel');
+  const overlay = document.getElementById('beam-overlay');
+  panel.style.display   = beamOpen ? 'flex' : 'none';
+  overlay.style.display = beamOpen ? 'block' : 'none';
+}
+
+function maximizeBeam() {
+  beamMaximized = !beamMaximized;
+  const panel = document.getElementById('beam-panel');
+  if (beamMaximized) {
+    panel.style.cssText = `
+      display:flex;flex-direction:column;
+      position:fixed;top:20px;left:20px;right:20px;bottom:20px;
+      width:auto;height:auto;max-height:none;
+      background:#161b22;border:1px solid #30363d;
+      border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+      z-index:1001;overflow:hidden;`;
+  } else {
+    panel.style.cssText = `
+      display:flex;flex-direction:column;
+      position:fixed;top:50%;left:50%;
+      transform:translate(-50%,-50%);
+      width:900px;max-height:88vh;
+      background:#161b22;border:1px solid #30363d;
+      border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+      z-index:1001;overflow:hidden;`;
+  }
+}
+
+// ── Drag and drop ──────────────────────────────────────────
+function beamDragOver(e) {
+  e.preventDefault();
+  document.getElementById('beam-drop-area').style.borderColor = '#1a6b4a';
+  document.getElementById('beam-drop-area').style.background  = '#0d2b1e';
+}
+function beamDragLeave(e) {
+  document.getElementById('beam-drop-area').style.borderColor = '#30363d';
+  document.getElementById('beam-drop-area').style.background  = 'transparent';
+}
+function beamDrop(e) {
+  e.preventDefault();
+  beamDragLeave(e);
+  const file = e.dataTransfer.files[0];
+  if (file) uploadBeamFile(file);
+}
+function beamFileSelected(e) {
+  const file = e.target.files[0];
+  if (file) uploadBeamFile(file);
+}
+
+// ── Upload ─────────────────────────────────────────────────
+async function uploadBeamFile(file) {
+  const status = document.getElementById('beam-upload-status');
+  status.style.display = 'block';
+  status.style.color   = '#8b949e';
+  status.textContent   = `⏳ Analyzing ${file.name}...`;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const res  = await fetch(`${API}/beam/upload`, {
+      method: 'POST', body: formData
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      status.style.color = '#f85149';
+      status.textContent = `⚠ ${data.error}`;
+      return;
+    }
+
+    beamResults  = data.cells || [];
+    beamFiltered = [...beamResults];
+
+    // Update summary cards
+    document.getElementById('bc-total-num').textContent  = data.total_cells;
+    document.getElementById('bc-healthy-num').textContent= data.healthy;
+    document.getElementById('bc-su-num').textContent     = data.su_mimo_fallback;
+    document.getElementById('bc-mis-num').textContent    = data.beam_misalignment;
+    document.getElementById('bc-fail-num').textContent   = data.beam_failure;
+    document.getElementById('bc-unk-num').textContent    = data.unknown_anomaly;
+
+    document.getElementById('beam-summary').style.display    = 'block';
+    document.getElementById('beam-table-wrap').style.display = 'block';
+    document.getElementById('beam-export-btn').style.display = 'block';
+
+    renderBeamTable(beamFiltered);
+    status.style.color = '#3fb950';
+    status.textContent = `✓ ${data.total_cells} cells analyzed · ${data.critical || 0} critical · ${data.high || 0} high priority`;
+    document.getElementById('beam-status').textContent =
+      `${data.total_cells} cells · ${file.name}`;
+
+  } catch(e) {
+    status.style.color = '#f85149';
+    status.textContent = 'Connection error. Make sure the server is running.';
+  }
+}
+
+// ── Render table ───────────────────────────────────────────
+function renderBeamTable(cells) {
+  const COLORS = {
+    healthy:           '#3fb950',
+    su_mimo_fallback:  '#f0883e',
+    beam_misalignment: '#d29922',
+    beam_failure:      '#f85149',
+    unknown_anomaly:   '#bc8cff',
+  };
+  const PRIORITY_COLORS = {
+    critical: '#f85149', high: '#f0883e',
+    medium: '#d29922',   none: '#3fb950',
+  };
+
+  const tbody = document.getElementById('beam-table-body');
+  tbody.innerHTML = cells.map(c => {
+    const color    = COLORS[c.final_label]    || '#666';
+    const priColor = PRIORITY_COLORS[c.priority] || '#666';
+    const label    = c.final_label.replace(/_/g,' ').toUpperCase();
+    const flags    = c.flag_count > 0
+      ? `<span style="color:#f85149">⚠ ${c.flag_count}</span>`
+      : `<span style="color:#3fb950">✓ 0</span>`;
+    const conf     = c.rf_confidence
+      ? `${(c.rf_confidence*100).toFixed(0)}%` : '—';
+    const gap      = c.cqi_rank_gap
+      ? c.cqi_rank_gap.toFixed(1) : '—';
+    const gapColor = c.cqi_rank_gap > 7 ? '#f0883e' : '#e6edf3';
+    const rankVal  = c.avg_rank
+      ? c.avg_rank.toFixed(2) : '—';
+    const rankColor= c.avg_rank < 1.8 ? '#f0883e' : '#e6edf3';
+    const be       = c.beam_efficiency !== undefined
+      ? c.beam_efficiency.toFixed(3) : '—';
+    const beColor  = c.beam_efficiency < 0.15 ? '#f85149'
+                   : c.beam_efficiency < 0.30 ? '#f0883e' : '#3fb950';
+
+    return `<tr style="border-bottom:1px solid #21262d;cursor:pointer;
+      transition:background 0.1s;"
+      onmouseover="this.style.background='#1c2128'"
+      onmouseout="this.style.background='transparent'"
+      onclick="showBeamCellDetail('${c.cell_id}')">
+      <td style="padding:8px 12px;color:#8b949e">${c.rank}</td>
+      <td style="padding:8px 12px;color:#e6edf3;font-weight:600">${c.cell_id}</td>
+      <td style="padding:8px 12px;">
+        <span style="background:${color}22;color:${color};
+          padding:2px 8px;border-radius:8px;font-size:11px;
+          font-weight:600;">${label}</span>
+      </td>
+      <td style="padding:8px 12px;color:#e6edf3">${conf}</td>
+      <td style="padding:8px 12px;">
+        <span style="color:${priColor};font-weight:600;
+          text-transform:uppercase;font-size:11px;">
+          ${c.priority}
+        </span>
+      </td>
+      <td style="padding:8px 12px;color:${gapColor};font-weight:600">${gap}</td>
+      <td style="padding:8px 12px;color:${rankColor}">${rankVal}</td>
+      <td style="padding:8px 12px;color:${beColor}">${be}</td>
+      <td style="padding:8px 12px">${flags}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Filter ─────────────────────────────────────────────────
+function filterBeamTable(scenario) {
+  if (beamActiveFilter === scenario) {
+    beamActiveFilter = null;
+    beamFiltered     = [...beamResults];
+  } else {
+    beamActiveFilter = scenario;
+    beamFiltered     = beamResults.filter(c => c.final_label === scenario);
+  }
+  renderBeamTable(beamFiltered);
+}
+
+function filterBeamBySearch(query) {
+  const q = query.toLowerCase();
+  beamFiltered = beamResults.filter(c =>
+    c.cell_id.toLowerCase().includes(q) ||
+    c.final_label.toLowerCase().includes(q)
+  );
+  renderBeamTable(beamFiltered);
+}
+
+// ── Cell detail popup ──────────────────────────────────────
+async function showBeamCellDetail(cellId) {
+  try {
+    const res  = await fetch(`${API}/beam/cell/${cellId}`);
+    const cell = await res.json();
+    if (cell.error) return;
+    renderBeamPopup(cell);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderBeamPopup(cell) {
+  const COLORS = {
+    healthy:           '#3fb950',
+    su_mimo_fallback:  '#f0883e',
+    beam_misalignment: '#d29922',
+    beam_failure:      '#f85149',
+    unknown_anomaly:   '#bc8cff',
+  };
+  const color = COLORS[cell.final_label] || '#666';
+  const label = cell.final_label.replace(/_/g,' ').toUpperCase();
+
+  // Build probability bars
+  const probaHtml = Object.entries(cell.all_proba || {})
+    .sort((a,b) => b[1]-a[1])
+    .map(([sc, prob]) => {
+      const c   = COLORS[sc] || '#666';
+      const pct = (prob*100).toFixed(1);
+      const w   = Math.round(prob*100);
+      return `<div style="margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;
+          font-size:11px;margin-bottom:2px;">
+          <span style="color:#8b949e">${sc.replace(/_/g,' ')}</span>
+          <span style="color:${c};font-weight:600">${pct}%</span>
+        </div>
+        <div style="background:#21262d;border-radius:4px;height:6px;">
+          <div style="background:${c};width:${w}%;height:6px;
+            border-radius:4px;transition:width 0.3s;"></div>
+        </div>
+      </div>`;
+    }).join('');
+
+  // KPI table rows
+  const kpiRows = (cell.kpi_detail || []).map(k => {
+    const flagStyle = k.flagged
+      ? 'color:#f85149;font-weight:700'
+      : 'color:#3fb950';
+    const icon = k.flagged ? '✗' : '✓';
+    const gauge = k.flagged
+      ? `<div style="width:60px;height:6px;background:#f8514955;
+          border-radius:3px;display:inline-block;">
+          <div style="width:30%;height:6px;background:#f85149;
+            border-radius:3px;"></div></div>`
+      : `<div style="width:60px;height:6px;background:#3fb95055;
+          border-radius:3px;display:inline-block;">
+          <div style="width:80%;height:6px;background:#3fb950;
+            border-radius:3px;"></div></div>`;
+    return `<tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:5px 10px;color:#c9d1d9;font-size:12px;">${k.kpi}</td>
+      <td style="padding:5px 10px;font-size:12px;${flagStyle}">
+        ${k.value}${k.unit ? ' '+k.unit : ''}</td>
+      <td style="padding:5px 10px;font-size:11px;color:#484f58">${k.threshold}</td>
+      <td style="padding:5px 10px;">${gauge}</td>
+      <td style="padding:5px 10px;${flagStyle};font-size:11px;">${icon}</td>
+    </tr>`;
+  }).join('');
+
+  // Flags and recommendations
+  const flagsHtml = (cell.flags || []).length > 0
+    ? cell.flags.map(f =>
+        `<div style="background:#2d1515;border-left:3px solid #f85149;
+          padding:6px 10px;border-radius:0 4px 4px 0;
+          margin-bottom:6px;font-size:12px;color:#f0a0a0;">⚠ ${f}</div>`
+      ).join('')
+    : `<div style="color:#3fb950;font-size:12px;">✓ No issues detected</div>`;
+
+  const recsHtml = (cell.recommendations || []).length > 0
+    ? cell.recommendations.map(r =>
+        `<div style="padding:5px 0;font-size:12px;color:#c9d1d9;
+          border-bottom:1px solid #21262d;">→ ${r}</div>`
+      ).join('')
+    : '';
+
+  const popup = document.getElementById('beam-cell-popup');
+  popup.innerHTML = `
+    <!-- Popup header -->
+    <div style="padding:14px 18px;border-bottom:1px solid #30363d;
+      background:#0d1117;display:flex;align-items:center;gap:10px;">
+      <span style="background:${color}22;color:${color};
+        padding:3px 10px;border-radius:8px;font-size:12px;
+        font-weight:700;border:1px solid ${color}44;">${label}</span>
+      <span style="font-size:16px;font-weight:700;color:#e6edf3">
+        ${cell.cell_id}</span>
+      <span style="font-size:12px;color:#8b949e;margin-left:4px;">
+        Confidence: ${cell.rf_confidence ? (cell.rf_confidence*100).toFixed(0)+'%' : '—'}
+        &nbsp;·&nbsp; ISO score: ${cell.iso_score}
+        &nbsp;·&nbsp; Priority:
+        <span style="color:${color};font-weight:600;text-transform:uppercase">
+          ${cell.priority}</span>
+      </span>
+      <button onclick="closeBeamPopup()" style="margin-left:auto;
+        background:none;border:none;color:#8b949e;
+        font-size:18px;cursor:pointer;">✕</button>
+    </div>
+
+    <!-- Two-column body -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;
+      gap:0;flex:1;overflow:hidden;max-height:70vh;">
+
+      <!-- Left: KPI table -->
+      <div style="overflow-y:auto;border-right:1px solid #30363d;padding:14px;">
+        <div style="font-size:11px;color:#8b949e;font-weight:600;
+          text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">
+          KPI Analysis
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1px solid #30363d;">
+              <th style="padding:5px 10px;text-align:left;font-size:11px;
+                color:#8b949e;font-weight:600;">KPI</th>
+              <th style="padding:5px 10px;text-align:left;font-size:11px;
+                color:#8b949e;font-weight:600;">VALUE</th>
+              <th style="padding:5px 10px;text-align:left;font-size:11px;
+                color:#8b949e;font-weight:600;">THRESHOLD</th>
+              <th style="padding:5px 10px;text-align:left;font-size:11px;
+                color:#8b949e;font-weight:600;">GAUGE</th>
+              <th style="padding:5px 10px;text-align:left;font-size:11px;
+                color:#8b949e;font-weight:600;">STATUS</th>
+            </tr>
+          </thead>
+          <tbody>${kpiRows}</tbody>
+        </table>
+      </div>
+
+      <!-- Right: Diagnosis -->
+      <div style="overflow-y:auto;padding:14px;display:flex;
+        flex-direction:column;gap:14px;">
+
+        <!-- RF probabilities -->
+        <div>
+          <div style="font-size:11px;color:#8b949e;font-weight:600;
+            text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">
+            Scenario Probabilities
+          </div>
+          ${probaHtml}
+        </div>
+
+        <!-- Flags -->
+        <div>
+          <div style="font-size:11px;color:#8b949e;font-weight:600;
+            text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">
+            Detected Issues
+          </div>
+          ${flagsHtml}
+        </div>
+
+        <!-- Recommendations -->
+        ${recsHtml ? `<div>
+          <div style="font-size:11px;color:#8b949e;font-weight:600;
+            text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">
+            Recommended Actions
+          </div>
+          ${recsHtml}
+        </div>` : ''}
+
+        <!-- Key metrics summary -->
+        <div style="background:#0d1117;border:1px solid #30363d;
+          border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:#8b949e;font-weight:600;
+            text-transform:uppercase;letter-spacing:0.6px;margin-bottom:10px;">
+            Key Beam Metrics
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            ${[
+              ['CQI/Rank Gap',    cell.cqi_rank_gap?.toFixed(2),    cell.cqi_rank_gap > 7 ? '#f0883e' : '#3fb950'],
+              ['Avg Rank',        cell.avg_rank?.toFixed(2),        cell.avg_rank < 1.8   ? '#f0883e' : '#3fb950'],
+              ['Beam Efficiency', cell.beam_efficiency?.toFixed(3), cell.beam_efficiency < 0.15 ? '#f85149' : '#3fb950'],
+              ['MU-MIMO Ratio',   cell.mu_mimo_ratio?.toFixed(3),   cell.mu_mimo_ratio < 0.25   ? '#f0883e' : '#3fb950'],
+            ].map(([lbl, val, col]) => `
+              <div style="background:#161b22;border-radius:6px;padding:8px;">
+                <div style="font-size:10px;color:#484f58;margin-bottom:3px;">
+                  ${lbl}</div>
+                <div style="font-size:16px;font-weight:700;color:${col};">
+                  ${val || '—'}</div>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  popup.style.display = 'flex';
+  document.getElementById('beam-popup-overlay').style.display = 'block';
+}
+
+function closeBeamPopup() {
+  document.getElementById('beam-cell-popup').style.display   = 'none';
+  document.getElementById('beam-popup-overlay').style.display= 'none';
+}
+
+function exportBeamCSV() {
+  if (!beamResults.length) return;
+  const rows = beamResults.map(c => [
+    c.cell_id, c.final_label, c.rf_confidence,
+    c.priority, c.iso_score, c.cqi_rank_gap,
+    c.avg_rank, c.beam_efficiency, c.mu_mimo_ratio,
+    c.flag_count, c.flags.join(' | ')
+  ]);
+  const header = ['cell_id','scenario','confidence','priority',
+    'iso_score','cqi_rank_gap','avg_rank','beam_efficiency',
+    'mu_mimo_ratio','flag_count','flags'];
+  const csv = [header, ...rows].map(r => r.join(',')).join('\n');
+  const a   = Object.assign(document.createElement('a'), {
+    href:     URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
+    download: 'beam_health_results.csv'
+  });
+  a.click();
+}
 </script>
 <!-- ── Chat tab button — add to header ──────────────── -->
 <!-- Find your header div and add this link -->
@@ -973,6 +1780,401 @@ function maximizeChat() {
     ">Send</button>
   </div>
 </div>
+<!-- Agent Panel -->
+<div id="agent-panel" style="
+  display:none;position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:700px;max-height:85vh;
+  background:#161b22;border:1px solid #30363d;
+  border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+  z-index:1001;flex-direction:column;overflow:hidden;">
 
+  <!-- Header -->
+  <div style="padding:16px 20px;border-bottom:1px solid #30363d;
+    background:#0d1117;display:flex;align-items:center;gap:10px;">
+    <div style="width:32px;height:32px;background:#6e40c9;border-radius:8px;
+      display:flex;align-items:center;justify-content:center;font-size:16px;">🔍</div>
+    <div>
+      <div style="font-size:14px;font-weight:600;color:#e6edf3">Network Investigation Agent</div>
+      <div style="font-size:11px;color:#8b949e">Autonomously investigates your network — plans, executes, reports</div>
+    </div>
+  <button onclick="maximizeAgent()" id="agent-max-btn" style="
+  background:none;border:none;color:#8b949e;
+  font-size:14px;cursor:pointer;padding:4px 8px;
+  border-radius:4px;" title="Maximize">⛶</button>
+<button onclick="toggleAgent()" style="
+  background:none;border:none;color:#8b949e;
+  font-size:18px;cursor:pointer;padding:4px 8px;
+  border-radius:4px;" title="Close">✕</button>
+  </div>
+
+  <!-- Goal input -->
+  <div style="padding:16px 20px;border-bottom:1px solid #30363d;">
+    <div style="font-size:12px;color:#8b949e;margin-bottom:8px;">Investigation goal:</div>
+    <div style="display:flex;gap:8px;">
+      <input id="agent-goal" value="Investigate my network and identify the top issues with root cause analysis and recommended actions"
+        style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:8px;
+        padding:8px 12px;color:#e6edf3;font-size:13px;outline:none;"/>
+      <button onclick="runAgent()" id="agent-run-btn" style="
+        background:#6e40c9;border:none;color:white;padding:8px 16px;
+        border-radius:8px;font-size:13px;cursor:pointer;font-weight:600;
+        white-space:nowrap;">▶ Investigate</button>
+    </div>
+    <!-- Quick goals -->
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+      <button onclick="setGoal('Identify all critical cells and explain what is causing each issue')"
+        style="background:#21262d;border:1px solid #30363d;color:#8b949e;
+        padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;">
+        Critical cells
+      </button>
+      <button onclick="setGoal('Find cells with degrading trends and recommend parameter changes')"
+        style="background:#21262d;border:1px solid #30363d;color:#8b949e;
+        padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;">
+        Degrading trends
+      </button>
+      <button onclick="setGoal('Analyze handover failures across the network and suggest fixes')"
+        style="background:#21262d;border:1px solid #30363d;color:#8b949e;
+        padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;">
+        HO failures
+      </button>
+      <button onclick="setGoal('Identify anomalous cells and explain what makes them unusual')"
+        style="background:#21262d;border:1px solid #30363d;color:#8b949e;
+        padding:3px 10px;border-radius:12px;font-size:11px;cursor:pointer;">
+        Anomalous cells
+      </button>
+    </div>
+  </div>
+
+  <!-- Steps tracker -->
+ <div id="agent-steps" style="display:none;padding:12px 20px;
+  border-bottom:1px solid #30363d;background:#0d1117;">
+  <div style="font-size:11px;color:#8b949e;margin-bottom:6px;
+    display:flex;align-items:center;justify-content:space-between;">
+    <span>Agent thinking:</span>
+    <button onclick="toggleStepsExpand()" id="steps-expand-btn"
+      style="background:none;border:none;color:#484f58;
+      font-size:11px;cursor:pointer;padding:2px 6px;">
+      ▼ expand
+    </button>
+  </div>
+    <div id="agent-steps-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+  </div>
+
+  <!-- Report output -->
+<div id="agent-output" style="flex:1;overflow-y:auto;padding:20px;
+  transition:all 0.2s;">
+    <div style="text-align:center;color:#484f58;font-size:13px;padding:40px;">
+      Upload a KPI file then click Investigate.<br>
+      The agent will autonomously plan and execute the investigation.
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="padding:10px 20px;border-top:1px solid #30363d;
+    display:flex;justify-content:space-between;align-items:center;">
+    <div id="agent-status" style="font-size:12px;color:#484f58;"></div>
+    <button onclick="exportReport()" id="export-report-btn" style="
+      display:none;background:#21262d;border:1px solid #30363d;
+      color:#e6edf3;padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;">
+      ⬇ Export report
+    </button>
+  </div>
+</div>
+
+<!-- Overlay -->
+<div id="agent-overlay" onclick="toggleAgent()" style="
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.6);z-index:1000;"></div>
+  <!-- Knowledge Base Panel -->
+<div id="kb-panel" style="
+  display:none;position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:750px;max-height:88vh;
+  background:#161b22;border:1px solid #30363d;
+  border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+  z-index:1001;flex-direction:column;overflow:hidden;">
+
+  <!-- Header -->
+  <div style="padding:16px 20px;border-bottom:1px solid #30363d;
+    background:#0d1117;display:flex;align-items:center;gap:10px;">
+    <div style="width:32px;height:32px;background:#0f7b6c;
+      border-radius:8px;display:flex;align-items:center;
+      justify-content:center;font-size:16px;">📚</div>
+    <div>
+      <div style="font-size:14px;font-weight:600;color:#e6edf3">
+        5G Parameter Knowledge Base
+      </div>
+      <div style="font-size:11px;color:#8b949e">
+        1,695 parameters indexed · Hybrid semantic + keyword search
+      </div>
+    </div>
+    <button onclick="maximizeKB()" id="kb-max-btn" style="
+      margin-left:auto;background:none;border:none;
+      color:#8b949e;font-size:14px;cursor:pointer;
+      padding:4px 8px;border-radius:4px;">⛶</button>
+    <button onclick="toggleKB()" style="
+      background:none;border:none;color:#8b949e;
+      font-size:18px;cursor:pointer;padding:4px 8px;">✕</button>
+  </div>
+
+  <!-- Search bar -->
+  <div style="padding:16px 20px;border-bottom:1px solid #30363d;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <input id="kb-search-input"
+        placeholder="Search parameters — e.g. A3 offset, time to trigger, handover threshold..."
+        style="flex:1;background:#0d1117;border:1px solid #30363d;
+        border-radius:8px;padding:9px 12px;color:#e6edf3;
+        font-size:13px;outline:none;"
+        onkeydown="if(event.key==='Enter') searchKB()"/>
+      <button onclick="searchKB()" style="
+        background:#0f7b6c;border:none;color:white;
+        padding:9px 16px;border-radius:8px;
+        font-size:13px;cursor:pointer;font-weight:600;">
+        🔍 Search
+      </button>
+      <button onclick="askKB()" id="kb-ask-btn" style="
+        display:none;
+        background:#1f6feb;border:none;color:white;
+        padding:9px 16px;border-radius:8px;
+        font-size:13px;cursor:pointer;font-weight:600;">
+        🤖 Ask AI
+      </button>
+    </div>
+
+    <!-- Quick searches -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <span style="font-size:11px;color:#484f58;margin-right:4px;">
+        Quick search:
+      </span>
+      <button onclick="quickKBSearch('A3 offset RSRP handover')"
+        style="background:#21262d;border:1px solid #30363d;
+        color:#8b949e;padding:3px 10px;border-radius:12px;
+        font-size:11px;cursor:pointer;">A3 offset</button>
+      <button onclick="quickKBSearch('time to trigger handover')"
+        style="background:#21262d;border:1px solid #30363d;
+        color:#8b949e;padding:3px 10px;border-radius:12px;
+        font-size:11px;cursor:pointer;">Time to trigger</button>
+      <button onclick="quickKBSearch('handover hysteresis RSRP')"
+        style="background:#21262d;border:1px solid #30363d;
+        color:#8b949e;padding:3px 10px;border-radius:12px;
+        font-size:11px;cursor:pointer;">Hysteresis</button>
+      <button onclick="quickKBSearch('A2 threshold RSRP handover')"
+        style="background:#21262d;border:1px solid #30363d;
+        color:#8b949e;padding:3px 10px;border-radius:12px;
+        font-size:11px;cursor:pointer;">A2 threshold</button>
+      <button onclick="quickKBSearch('PRB utilization load balancing')"
+        style="background:#21262d;border:1px solid #30363d;
+        color:#8b949e;padding:3px 10px;border-radius:12px;
+        font-size:11px;cursor:pointer;">PRB utilization</button>
+      <button onclick="quickKBSearch('SINR measurement threshold')"
+        style="background:#21262d;border:1px solid #30363d;
+        color:#8b949e;padding:3px 10px;border-radius:12px;
+        font-size:11px;cursor:pointer;">SINR threshold</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="kb-output" style="flex:1;overflow-y:auto;padding:20px;">
+    <div style="text-align:center;color:#484f58;font-size:13px;padding:40px;">
+      Search for any 5G parameter — get recommended values,
+      ranges, and AI explanation from your operator baseline.
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div style="padding:10px 20px;border-top:1px solid #30363d;
+    display:flex;justify-content:space-between;align-items:center;">
+    <div id="kb-status" style="font-size:12px;color:#484f58;"></div>
+    <div style="font-size:11px;color:#484f58;">
+      Source: 5G NR Parameter Baseline · 1,695 parameters
+    </div>
+  </div>
+</div>
+
+<!-- KB Overlay -->
+<div id="kb-overlay" onclick="toggleKB()" style="
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.6);z-index:1000;"></div>
+  <!-- Beam Analyzer Panel -->
+<div id="beam-panel" style="
+  display:none;position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:900px;max-height:88vh;
+  background:#161b22;border:1px solid #30363d;
+  border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.7);
+  z-index:1001;flex-direction:column;overflow:hidden;">
+
+  <!-- Header -->
+  <div style="padding:16px 20px;border-bottom:1px solid #30363d;
+    background:#0d1117;display:flex;align-items:center;gap:10px;">
+    <div style="width:32px;height:32px;background:#1a6b4a;
+      border-radius:8px;display:flex;align-items:center;
+      justify-content:center;font-size:16px;">📡</div>
+    <div>
+      <div style="font-size:14px;font-weight:600;color:#e6edf3">
+        5G Massive MIMO Beam Health Analyzer
+      </div>
+      <div style="font-size:11px;color:#8b949e">
+        Three-tier detection: Isolation Forest → Random Forest → Confidence gate
+      </div>
+    </div>
+    <button onclick="maximizeBeam()" id="beam-max-btn" style="
+      margin-left:auto;background:none;border:none;
+      color:#8b949e;font-size:14px;cursor:pointer;
+      padding:4px 8px;border-radius:4px;" title="Maximize">⛶</button>
+    <button onclick="toggleBeam()" style="
+      background:none;border:none;color:#8b949e;
+      font-size:18px;cursor:pointer;padding:4px 8px;">✕</button>
+  </div>
+
+  <!-- Upload zone -->
+  <div id="beam-upload-zone" style="padding:20px;
+    border-bottom:1px solid #30363d;">
+    <div id="beam-drop-area" style="
+      border:2px dashed #30363d;border-radius:10px;
+      padding:24px;text-align:center;cursor:pointer;
+      transition:all 0.2s;"
+      ondragover="beamDragOver(event)"
+      ondragleave="beamDragLeave(event)"
+      ondrop="beamDrop(event)"
+      onclick="document.getElementById('beam-file-input').click()">
+      <div style="font-size:28px;margin-bottom:8px;">📡</div>
+      <div style="font-size:13px;font-weight:600;color:#e6edf3;
+        margin-bottom:4px;">
+        Drop your 5G NR beam KPI export here
+      </div>
+      <div style="font-size:11px;color:#8b949e;">
+        Needs: rank, CQI, MU-MIMO ratio, BLER, SINR columns
+        · Nokia / Ericsson / Samsung · CSV or Excel
+      </div>
+      <input type="file" id="beam-file-input" accept=".csv,.xlsx,.xls"
+        style="display:none" onchange="beamFileSelected(event)"/>
+    </div>
+    <div id="beam-upload-status" style="margin-top:10px;
+      font-size:12px;color:#8b949e;text-align:center;display:none;">
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div id="beam-summary" style="display:none;
+    padding:14px 20px;border-bottom:1px solid #30363d;">
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;">
+      <div class="beam-card" id="bc-total"
+        style="background:#0d1117;border:1px solid #30363d;">
+        <div class="bc-num" id="bc-total-num">0</div>
+        <div class="bc-lbl">TOTAL CELLS</div>
+      </div>
+      <div class="beam-card" id="bc-healthy"
+        style="background:#0d1117;border:1px solid #3fb950;cursor:pointer"
+        onclick="filterBeamTable('healthy')">
+        <div class="bc-num" style="color:#3fb950" id="bc-healthy-num">0</div>
+        <div class="bc-lbl">HEALTHY</div>
+      </div>
+      <div class="beam-card" id="bc-su"
+        style="background:#0d1117;border:1px solid #f0883e;cursor:pointer"
+        onclick="filterBeamTable('su_mimo_fallback')">
+        <div class="bc-num" style="color:#f0883e" id="bc-su-num">0</div>
+        <div class="bc-lbl">SU-MIMO<br>FALLBACK</div>
+      </div>
+      <div class="beam-card" id="bc-mis"
+        style="background:#0d1117;border:1px solid #d29922;cursor:pointer"
+        onclick="filterBeamTable('beam_misalignment')">
+        <div class="bc-num" style="color:#d29922" id="bc-mis-num">0</div>
+        <div class="bc-lbl">BEAM<br>MISALIGN</div>
+      </div>
+      <div class="beam-card" id="bc-fail"
+        style="background:#0d1117;border:1px solid #f85149;cursor:pointer"
+        onclick="filterBeamTable('beam_failure')">
+        <div class="bc-num" style="color:#f85149" id="bc-fail-num">0</div>
+        <div class="bc-lbl">BEAM<br>FAILURE</div>
+      </div>
+      <div class="beam-card" id="bc-unk"
+        style="background:#0d1117;border:1px solid #bc8cff;cursor:pointer"
+        onclick="filterBeamTable('unknown_anomaly')">
+        <div class="bc-num" style="color:#bc8cff" id="bc-unk-num">0</div>
+        <div class="bc-lbl">UNKNOWN<br>ANOMALY</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results table -->
+  <div id="beam-table-wrap" style="flex:1;overflow-y:auto;display:none;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead style="position:sticky;top:0;background:#0d1117;z-index:1;">
+        <tr>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">RANK</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">CELL ID</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">SCENARIO</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">CONFIDENCE</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">PRIORITY</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">CQI/RANK GAP</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">AVG RANK</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">BEAM EFF</th>
+          <th style="padding:10px 12px;text-align:left;color:#8b949e;
+            font-weight:600;border-bottom:1px solid #30363d;">FLAGS</th>
+        </tr>
+      </thead>
+      <tbody id="beam-table-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Status bar -->
+  <div style="padding:10px 20px;border-top:1px solid #30363d;
+    display:flex;justify-content:space-between;align-items:center;">
+    <div id="beam-status" style="font-size:12px;color:#484f58;"></div>
+    <div style="display:flex;gap:8px;">
+      <input id="beam-search" placeholder="Search cell ID..."
+        style="background:#0d1117;border:1px solid #30363d;
+        border-radius:6px;padding:4px 10px;color:#e6edf3;
+        font-size:12px;outline:none;width:160px;"
+        oninput="filterBeamBySearch(this.value)"/>
+      <button onclick="exportBeamCSV()" style="
+        display:none;background:#21262d;border:1px solid #30363d;
+        color:#e6edf3;padding:5px 12px;border-radius:6px;
+        font-size:12px;cursor:pointer;" id="beam-export-btn">
+        ⬇ Export
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Beam cell detail popup -->
+<div id="beam-cell-popup" style="
+  display:none;position:fixed;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  width:820px;max-height:85vh;
+  background:#161b22;border:1px solid #30363d;
+  border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.9);
+  z-index:1003;flex-direction:column;overflow:hidden;">
+</div>
+<div id="beam-popup-overlay" onclick="closeBeamPopup()" style="
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.7);z-index:1002;"></div>
+
+<!-- Beam overlay -->
+<div id="beam-overlay" onclick="toggleBeam()" style="
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.6);z-index:1000;"></div>
+
+<style>
+.beam-card {
+  border-radius:8px;padding:10px 8px;text-align:center;
+}
+.bc-num {
+  font-size:22px;font-weight:700;color:#e6edf3;line-height:1;
+}
+.bc-lbl {
+  font-size:9px;color:#8b949e;margin-top:4px;
+  text-transform:uppercase;letter-spacing:0.5px;line-height:1.3;
+}
+</style>
 </body>
 </html>
