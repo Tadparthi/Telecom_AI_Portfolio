@@ -35,7 +35,7 @@ Drop a CSV or Excel KPI export from any vendor. The tool auto-detects
 column names — Nokia, Ericsson, Samsung — no reformatting needed.
 
 ```
-NR PRB util PDSCH                      → detected as PRB Util DL
+NR PRB util PDSCH (NR_5114a)           → detected as PRB Util DL
 NR Average UE related SINR for PUSCH   → detected as SINR
 NR Intra gNB intra frequency HO ratio  → detected as HO Success Rate
 ```
@@ -265,3 +265,87 @@ Transitioning to AI/ML engineering for telecom networks.
 Open to roles in: AI-RAN · Network Operations AI · Telecom AI Engineering
 
 *Built during RF Engineer → AI Engineer transition | 2026*
+
+---
+
+## AI Network Assistant — LLM Integration
+
+### Architecture
+
+GPT-4o powered chat interface embedded in the KPI upload dashboard.
+Uses a backend proxy pattern — OpenAI API calls go through FastAPI,
+key never exposed in frontend code.
+
+```
+User question (browser)
+        ↓
+POST /chat → FastAPI backend
+        ↓
+Backend builds system prompt with network context:
+  - Full summary of uploaded cells
+  - Top 10 worst cells with flags and scores
+  - Critical cell details
+        ↓
+If question mentions a specific cell:
+  GET /cell/{cell_id} → fetches 14-day trend
+  Appended to context before calling OpenAI
+        ↓
+POST to OpenAI /v1/chat/completions (gpt-4o)
+        ↓
+Response streamed back to browser
+```
+
+### System prompt design
+
+The system prompt gives the LLM three layers of context:
+
+**Role definition:**
+RF engineering expertise, 20 years field experience,
+specific parameter value ranges for suggestions.
+
+**Network data:**
+Uploaded cell summary — counts per band, top 10 worst
+cells with health scores and flags.
+
+**Cell detail (on demand):**
+14-day trend per KPI fetched only when a specific cell
+is mentioned — keeps the context window lean for general
+questions, rich for cell-specific analysis.
+
+### Security
+
+```python
+# .env file (never committed to git)
+OPENAI_API_KEY=sk-your-key-here
+
+# FastAPI loads at startup
+from dotenv import load_dotenv
+load_dotenv()
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+# Frontend calls local API only
+fetch('http://localhost:8000/chat', {...})
+# Never calls OpenAI directly
+```
+
+### Capabilities demonstrated
+
+```
+Natural language understanding    — question intent detection
+Tool calling pattern              — fetches cell data when needed
+Context management                — chat history with token limits
+Domain-specific prompting         — RF parameter ranges embedded
+Backend proxy security pattern    — key management best practice
+```
+
+### Resume line
+
+```
+Built GPT-4o powered network operations assistant with
+tool calling, context-aware prompting, and secure backend
+proxy — answers natural language questions about live
+network KPI data, explains RF root causes, and suggests
+specific parameter changes with exact values
+```
+
+---

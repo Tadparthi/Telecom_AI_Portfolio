@@ -9,21 +9,57 @@ actually dealt with in the field.
 
 ---
 
-## Run it yourself
+## Screenshots
 
-```bash
-git clone https://github.com/Tadparthi/Telecom_AI_Portfolio
-pip install -r requirements.txt
-# Windows: double-click Launch_NOC_Tool.bat
-# Mac/Linux: uvicorn network_health_api:app --reload
-```
+![Dashboard](screenshots/dashboard.png)
+*2,038 unique cells ranked by health score — upload any Nokia/Ericsson/Samsung OSS export*
 
-Then open `http://localhost:8000/dashboard` and upload any Nokia,
-Ericsson, or Samsung KPI export. No reformatting needed.
+![Cell Detail](screenshots/cell_details.png)
+*Click any cell — KPI vs threshold table + 14-day sparkline trend charts*
+
+![AI Assistant](screenshots/ai_assistant.png)
+*GPT-4o powered assistant — ask questions about your network in plain English*
 
 ---
 
-## The tools
+## Run it yourself
+
+**Requirements:** Python 3.10+, pip
+
+```bash
+# 1. Clone
+git clone https://github.com/Tadparthi/Telecom_AI_Portfolio
+cd Telecom_AI_Portfolio
+
+# 2. Create virtual environment
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Mac/Linux
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Add your OpenAI key
+# Create a file called .env in the project folder:
+# OPENAI_API_KEY=sk-your-key-here
+# (get a key at platform.openai.com — free credits available)
+
+# 5. Start the tool
+# Windows: double-click Launch_NOC_Tool.bat
+# Mac/Linux:
+uvicorn network_health_api:app --host 0.0.0.0 --port 8000
+
+# 6. Open dashboard
+# Go to http://localhost:8000/dashboard in your browser
+```
+
+**No Nokia/Ericsson/Samsung KPI data? No problem.**
+A sample template CSV is included — `kpi_template.csv`. Download it,
+fill in your KPI values, and upload. Or upload any OSS export directly
+— the tool auto-detects Nokia, Ericsson, and Samsung column formats.
+---
+
+## What it does
 
 ### KPI Upload Analyzer — bulk network health assessment
 
@@ -46,30 +82,83 @@ release has gone from 11% to 18% over two weeks is urgent.
 
 ---
 
-### Single Cell Tool — quick investigation
+### AI Network Assistant
 
-For when you already know which cell you want to look at. Type in the
-KPIs, hit run, get the assessment. Four presets included if you just
-want to see what the output looks like.
+After uploading a KPI file click **AI Assistant** in the top right.
+Ask questions in plain English — the assistant has full context of
+your network data and fetches 14-day trend history on demand.
+
+```
+You:  "What are my worst cells and what's causing the issues?"
+
+AI:   "Your top critical cell is Cell_0319. SINR has been
+       stable at 3.2-4.7dB for 14 days — this isn't a sudden
+       failure, it's a chronic coverage problem. More urgent:
+       abnormal release has been climbing from 11.7% to 18.6%
+       over the same period. Two KPIs degrading together like
+       this points to hardware — connector or antenna — not
+       interference. Interference would show SINR variability
+       and affect neighboring cells similarly.
+       
+       Recommend field dispatch before HO success rate drops.
+       Want me to pull the full trend for any specific cell?"
+```
+
+```
+You:  "What parameter changes do you recommend?"
+
+AI:   "For Cell_1706 — CQI and HO success issues:
+       • A3 offset: set to 3dB
+       • TTT: increase to 240ms (suburban profile)
+       • RSRQ threshold: verify -10 to -14dB range
+       
+       For Cell_0226 — SINR and HO issues:
+       • Antenna tilt/azimuth optimization first
+       • A3 offset: 3dB after antenna work
+       • RSRQ threshold check"
+```
+
+**Security:** OpenAI calls are proxied through the FastAPI backend.
+Your API key lives in a local `.env` file — never in the HTML or JS.
 
 ---
 
-### REST API — for integration
+### Single Cell Tool
 
-The ML models are served as a REST API so you can call them from
-anything — a script, a dashboard, an O-RAN xApp, whatever.
+For investigating individual cells. Enter KPI values manually or
+load presets. Four presets included: critical, healthy, watch, anomalous.
+
+---
+
+### REST API
+
+The ML models are served as a REST API:
 
 ```bash
+# Single cell prediction
 curl -X POST http://localhost:8000/predict \
-  -d '{"sinr_db": 2.1, "cqi_mean": 5.2, "bler_dl": 14.5,
-       "prb_util_dl": 85.0, "ho_success_rate": 91.0,
-       "abnormal_release_ratio": 18.5, "rlf_count": 67000,
-       "prb_util_ul": 72.0, "cell_id": "Cell_1042"}'
+  -H "Content-Type: application/json" \
+  -d '{
+    "sinr_db": 2.1, "cqi_mean": 5.2, "bler_dl": 14.5,
+    "prb_util_dl": 85.0, "ho_success_rate": 91.0,
+    "abnormal_release_ratio": 18.5, "rlf_count": 67000,
+    "prb_util_ul": 72.0, "cell_id": "Cell_1042"
+  }'
 ```
 
-Returns health band, score, flags, anomaly status, and recommended
-action. Under a second for a single cell, a few seconds for a full
-network export.
+```json
+{
+  "cell_id": "Cell_1042",
+  "health_band": "critical",
+  "health_score": 14.5,
+  "flags": ["SINR poor", "CQI poor", "HO success low"],
+  "recommended_action": "Critical — immediate field investigation required",
+  "priority": "critical",
+  "confidence": 0.80
+}
+```
+
+Full API docs at `http://localhost:8000/docs` after starting the server.
 
 ---
 
@@ -78,93 +167,63 @@ network export.
 ### Project 1 — Network Cell Health Monitor
 `kpi_anomaly.ipynb` · Real 5G NR OSS data · 1,915 cells · 14 days
 
-This one started with a question I kept running into: how do you find
-the cells that are going to fail before they actually fail?
+Three-layer detection system:
 
-Three layers working together. A rule-based health score using 8 KPI
-flags with weights I calibrated from field experience. Isolation Forest
-anomaly detection across 18 KPIs simultaneously — catches the cells
-that look fine on every individual metric but whose combination of
-readings doesn't make sense. And linear regression trend detection
-with p-value filtering so you're not chasing noise.
+| Layer | Technique | Result |
+|-------|-----------|--------|
+| Rule-based | Weighted KPI health score | 5 health bands |
+| ML | Isolation Forest anomaly detection | 1,341 anomalous cell-days |
+| Statistical | Linear regression + p-value | 140 degrading cells |
 
-The headline result: Cell 1123 was flagged as highest combined risk
-5 days before its HO success rate hit 0%. The 14-day trace confirmed
-a connector failure in progress. Threshold monitoring saw nothing.
-
-378 cells were flagged by the anomaly detector that passed every
-individual threshold check. That's the gap this fills.
+Cell 1123 flagged 5 days before connector failure confirmed —
+HO success rate collapsed to 0% on the final two days.
+378 cells caught by anomaly detection that passed every threshold check.
 
 ---
 
 ### Project 2 — Handover Failure Root Cause Classifier
 `project2_ho_classifier.ipynb`
 
-One thing that used to take 30-45 minutes of manual work: pull the
-counters, check RSRP delta, look at RSRQ on the target, check PRB
-utilization, pull an L3 trace if needed, conclude it was coverage gap
-or TTT mismatch or congestion or pilot pollution.
+Two Random Forest classifiers — A3 intra-frequency and A5
+inter-frequency — built with physically correct trigger logic.
 
-This does that in milliseconds, across every HO failure in the network.
+| Model | Accuracy | CV Score |
+|-------|----------|----------|
+| A3 — 5 classes | 99.7% | 0.998 ± 0.001 |
+| A5 — 4 classes | 99.3% | 0.995 ± 0.001 |
 
-Two separate models — A3 intra-frequency and A5 inter-frequency —
-because they use fundamentally different trigger logic. A3 fires on
-relative RSRP delta. A5 fires on absolute thresholds. Combining them
-into one model would be physically wrong, and the accuracy would
-reflect that.
-
-The parameters came directly from real network configs: 3dB A3 offset,
--12dB RSRQ threshold, 60% PRB rejection, TTT values matched to
-highway/suburban/pedestrian UE speed profiles.
-
-| Model | Accuracy | CV | Gap |
-|-------|----------|----|-----|
-| A3 — 5 classes | 99.7% | 0.998 ± 0.001 | 0.3% |
-| A5 — 4 classes | 99.3% | 0.995 ± 0.001 | 0.5% |
+Failure classes: coverage gap · TTT mismatch · congestion block ·
+wrong target · success. Each class maps to a specific NOC action.
 
 ---
 
 ### Project 3 — LTE Coverage Predictor
-`project3_coverage_predictor.ipynb` · 567,195 real measurements · Vienna
+`project3_coverage_predictor.ipynb` · 567,195 measurements · Vienna
 
-Trained on real LTE drive test data — three operators, 903 cells, multiple
-frequency bands. The model learns the relationship between where you are
-relative to the antenna and what signal you get, then predicts signal
-at locations that were never driven.
+Random Forest regression predicting RSRP at unmeasured locations.
+Features engineered from propagation physics — Haversine distance,
+angle off boresight, log10(distance), interference ratio.
 
-The interesting part of this project isn't the accuracy — it's what
-went wrong first. The initial model hit R²=0.9683, which seemed too
-good. Feature importance showed pathloss_db at 70.9%. That's a
-tautology — path loss is essentially derived from RSRP, so using it to
-predict RSRP is circular. Removed it, rebuilt, got RMSE 4.50 dBm and
-R²=0.8239 — which is actually competitive with commercial planning tools
-and doesn't cheat.
+Data leakage identified and corrected: initial model used pathloss_db
+(R²=0.9683) — found to be mathematically circular with RSRP. Corrected
+model: RMSE 4.50 dBm, R²=0.8239 — competitive with commercial tools.
 
-The geometry features — Haversine distance, angle off boresight,
-log10(distance) to linearize the path loss relationship — came from
-understanding how antennas work, not from reading an ML textbook.
-
-Output is an interactive OpenStreetMap heatmap with four toggleable
-layers: drive test measurements, ML predictions, cell site markers
-with antenna parameters, and poor coverage alerts.
+Output: interactive OpenStreetMap heatmap with 4 toggleable layers.
 
 ---
 
-## A note on why domain knowledge matters here
+## Why domain knowledge matters here
 
-The RLF counter in the Nokia OSS export accumulates randomly rather
-than resetting daily. Using the raw value is meaningless. You need to
-know that to build a useful health score.
+The RLF counter accumulates randomly rather than resetting daily —
+using the raw value is meaningless. You need to know that.
 
-RSRQ — not SINR — drives handover decisions in 4G/5G. Building a HO
-failure classifier using SINR as the key feature would be wrong. You
-need to know that to build the right features.
+RSRQ not SINR drives handover decisions — building a HO classifier
+with SINR as the key feature would be wrong. You need to know that.
 
 Angle off boresight looks unimportant in a bar chart because cell
-selection masks the effect — UEs that are badly off-boresight tend to
-switch cells before you measure them. The Random Forest found it was
-the most important feature anyway (0.213 importance). You need field
-experience to know whether to trust the chart or the model.
+selection masks the effect. The Random Forest found it was the most
+important feature (0.213). You need field experience to know whether
+to trust the chart or the model.
 
 These aren't things you learn from a Kaggle dataset.
 
@@ -172,30 +231,42 @@ These aren't things you learn from a Kaggle dataset.
 
 ## Stack
 
-Python · FastAPI · Scikit-learn · Pandas · NumPy · SciPy · Folium
+```
+Python · FastAPI · Uvicorn · Pydantic · python-dotenv
+Pandas · NumPy · Scikit-learn · SciPy · Folium
+Matplotlib · Seaborn · OpenAI API
+```
 
 ---
 
 ## Files
 
 ```
-kpi_anomaly.ipynb                  Project 1
-project2_ho_classifier.ipynb       Project 2
-project3_coverage_predictor.ipynb  Project 3
+kpi_anomaly.ipynb                  Project 1 — Network health monitor
+project2_ho_classifier.ipynb       Project 2 — HO failure classifier
+project3_coverage_predictor.ipynb  Project 3 — Coverage predictor
 
-network_health_api.py              FastAPI backend
-kpi_upload_dashboard.html          Bulk upload tool
-noc_dashboard.html                 Single cell tool
-Launch_NOC_Tool.bat                One-click launcher
+network_health_api.py              FastAPI backend + AI proxy
+kpi_upload_dashboard.html          Bulk KPI upload analyzer + AI chat
+noc_dashboard.html                 Single cell NOC tool
+Launch_NOC_Tool.bat                One-click Windows launcher
+requirements.txt                   Dependencies
 
-coverage_heatmap.html              Interactive coverage map
-requirements.txt
+
+screenshots/
+  dashboard.png                    Summary cards + ranked cell table
+  cell_detail.png                  KPI detail popup + trend charts
+  ai_assistant.png                 AI assistant in action
 ```
 
 ---
 
-20 years RF · Now building AI for the same problems · Open to
-AI-RAN · Network Operations AI · Telecom AI Engineering roles
+## Contact
+
+20 years RF · T-Mobile · Verizon · AT&T · Bell Canada · Nokia · Mavenir
+
+Transitioning to AI/ML engineering for telecom networks.
+Open to: AI-RAN · Network Operations AI · Telecom AI Engineering
 
 <<<<<<< HEAD
 20 years 4G/5G RF engineering experience
