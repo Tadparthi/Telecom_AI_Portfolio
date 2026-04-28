@@ -2,9 +2,9 @@
 
 I spent 20 years optimizing 5G and 4G networks for T-Mobile, Verizon,
 AT&T, Bell Canada, Nokia, and Mavenir. This is what happens when you
-combine that with machine learning.
+combine that with machine learning and generative AI.
 
-Three projects. Real data. Deployed tools. Built to solve problems I
+Six projects. Real data. Deployed tools. Built to solve problems I
 actually dealt with in the field.
 
 ---
@@ -24,7 +24,7 @@ actually dealt with in the field.
 
 ## Run it yourself
 
-**Requirements:** Python 3.10+, pip
+**Requirements:** Python 3.10+, OpenAI API key
 
 ```bash
 # 1. Clone
@@ -42,190 +42,214 @@ pip install -r requirements.txt
 # 4. Add your OpenAI key
 # Create a file called .env in the project folder:
 # OPENAI_API_KEY=sk-your-key-here
-# (get a key at platform.openai.com — free credits available)
 
-# 5. Start the tool
+# 5. Build the RAG knowledge base (first time only)
+python build_rag.py
+
+# 6. Start the tool
 # Windows: double-click Launch_NOC_Tool.bat
 # Mac/Linux:
 uvicorn network_health_api:app --host 0.0.0.0 --port 8000
 
-# 6. Open dashboard
-# Go to http://localhost:8000/dashboard in your browser
+# 7. Open dashboard
+# Go to http://localhost:8000/dashboard
 ```
 
-**No Nokia/Ericsson/Samsung KPI data? No problem.**
-A sample template CSV is included — `kpi_template.csv`. Download it,
-fill in your KPI values, and upload. Or upload any OSS export directly
-— the tool auto-detects Nokia, Ericsson, and Samsung column formats.
 ---
 
-## What it does
+## What the platform does
 
-### KPI Upload Analyzer — bulk network health assessment
+Five AI-powered panels accessible from the dashboard header:
 
-Drop a CSV or Excel export from your OSS. The tool figures out which
-columns are which — it knows that `NR PRB util PDSCH (NR_5114a)` means
-PRB utilization downlink, and `NR Average UE related SINR for PUSCH in
-Rank 1 (NR_5062b)` means SINR. You don't have to rename anything.
+---
+
+### KPI Upload Analyzer
+
+Drop any Nokia, Ericsson, or Samsung OSS export — CSV or Excel.
+Auto-detects column names across all three vendors. No reformatting needed.
 
 Multi-period files get grouped by unique cell automatically. A 14-day
 Nokia export with 26,790 rows becomes a ranked list of 2,038 cells,
-scored on the most recent period.
+scored on the most recent period with 14-day trend charts.
 
-Click any row and you get two things: a KPI table showing exactly which
-thresholds were breached and by how much, and a 14-day sparkline for
-each KPI so you can see whether things are getting better or worse.
+Click any cell — KPI vs threshold table with gauge bars and 14-day
+sparkline for each KPI showing stable / improving / degrading direction.
 
-The trend detection is what makes this useful in practice. A cell with
-abnormal release at 18% is worth investigating. A cell where abnormal
-release has gone from 11% to 18% over two weeks is urgent.
-
----
-
-### AI Network Assistant
-
-After uploading a KPI file click **AI Assistant** in the top right.
-Ask questions in plain English — the assistant has full context of
-your network data and fetches 14-day trend history on demand.
-
-```
-You:  "What are my worst cells and what's causing the issues?"
-
-AI:   "Your top critical cell is Cell_0319. SINR has been
-       stable at 3.2-4.7dB for 14 days — this isn't a sudden
-       failure, it's a chronic coverage problem. More urgent:
-       abnormal release has been climbing from 11.7% to 18.6%
-       over the same period. Two KPIs degrading together like
-       this points to hardware — connector or antenna — not
-       interference. Interference would show SINR variability
-       and affect neighboring cells similarly.
-       
-       Recommend field dispatch before HO success rate drops.
-       Want me to pull the full trend for any specific cell?"
-```
-
-```
-You:  "What parameter changes do you recommend?"
-
-AI:   "For Cell_1706 — CQI and HO success issues:
-       • A3 offset: set to 3dB
-       • TTT: increase to 240ms (suburban profile)
-       • RSRQ threshold: verify -10 to -14dB range
-       
-       For Cell_0226 — SINR and HO issues:
-       • Antenna tilt/azimuth optimization first
-       • A3 offset: 3dB after antenna work
-       • RSRQ threshold check"
-```
-
-**Security:** OpenAI calls are proxied through the FastAPI backend.
-Your API key lives in a local `.env` file — never in the HTML or JS.
+The trend detection is what makes this useful. A cell with abnormal
+release at 18% is worth monitoring. A cell where it went from 11% to
+18% over two weeks is urgent — caught 5 days earlier with trend
+monitoring than with threshold alarms.
 
 ---
 
-### Single Cell Tool
+### Auto-Investigate — Autonomous Agent
 
-For investigating individual cells. Enter KPI values manually or
-load presets. Four presets included: critical, healthy, watch, anomalous.
+Click one button. The agent investigates your entire network without
+any follow-up questions.
+
+```
+Goal: "Investigate my network and identify the top issues"
+
+Step 1  get_network_summary()   → 2,036 cells, 8 critical, 74 degraded
+Step 2  get_worst_cells(8)      → all 8 critical cells identified
+Step 3  get_cell_detail() x 8  → full KPI + trend per critical cell
+Step 4  search_parameters()    → real parameter values from baseline
+
+Output: structured report — executive summary, per-cell findings,
+        pattern analysis, root cause assessment, prioritized actions
+
+10 autonomous tool calls. Zero human intervention.
+```
+
+The agent identified that all 8 critical cells showed 0% HO success
+consistently — not declining, always zero. That pattern means
+configuration not hardware. Reached autonomously from the data.
 
 ---
 
-### REST API
+### AI Assistant
 
-The ML models are served as a REST API:
+Conversational GPT-4o with full network context. Answers questions
+about your uploaded KPI data in plain English. Cell-specific 14-day
+trend fetched on demand when you mention a cell ID. OpenAI calls
+proxied through backend — API key never in browser code.
 
-```bash
-# Single cell prediction
-curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "sinr_db": 2.1, "cqi_mean": 5.2, "bler_dl": 14.5,
-    "prb_util_dl": 85.0, "ho_success_rate": 91.0,
-    "abnormal_release_ratio": 18.5, "rlf_count": 67000,
-    "prb_util_ul": 72.0, "cell_id": "Cell_1042"
-  }'
+---
+
+### Knowledge Base — RAG Parameter Search
+
+1,695 5G NR parameters indexed in ChromaDB using OpenAI embeddings.
+Hybrid semantic + keyword search with event type discrimination
+(A3 ranks above A2), MO class preference (NR Cell above NR HO Interface),
+and RSRP/RSRQ ranking.
+
+Click Ask AI — GPT-4o explains the parameter using your actual baseline
+as the source. No hallucination. Grounded answers only.
+
+The agent uses this as a live tool during investigation — looks up real
+operator baseline values before making parameter recommendations.
+
+---
+
+### Beam Analyzer — 5G Massive MIMO Health
+
+Three-tier detection for Massive MIMO beamforming issues:
+
+```
+Tier 1 — Isolation Forest
+  Trained on healthy cell baseline
+  Clears normal cells — no wasted compute
+
+Tier 2 — Random Forest (4-class)
+  su_mimo_fallback    UE angular clustering
+  beam_misalignment   SSB sweep misconfiguration
+  beam_failure        hardware or environment event
+  healthy             no issues detected
+
+Tier 3 — Confidence gate
+  High confidence  known scenario + recommendations
+  Low confidence   unknown_anomaly + manual review flag
 ```
 
-```json
-{
-  "cell_id": "Cell_1042",
-  "health_band": "critical",
-  "health_score": 14.5,
-  "flags": ["SINR poor", "CQI poor", "HO success low"],
-  "recommended_action": "Critical — immediate field investigation required",
-  "priority": "critical",
-  "confidence": 0.80
-}
-```
-
-Full API docs at `http://localhost:8000/docs` after starting the server.
+The key insight: SU-MIMO fallback is invisible to threshold monitoring.
+SINR 17dB, CQI 11.4, BLER 3% — no alarm fires. But rank 1.2 with 18
+active users means the scheduler cannot find UE pairs with sufficient
+angular separation. Cell running at 40% beamforming efficiency with
+zero alarms. The cqi_rank_gap derived feature catches it.
 
 ---
 
 ## The ML projects
 
-### Project 1 — Network Cell Health Monitor
-`kpi_anomaly.ipynb` · Real 5G NR OSS data · 1,915 cells · 14 days
-
-Three-layer detection system:
+### Project 1 — 5G Network Cell Health Monitor
+`kpi_anomaly.ipynb` · Real 5G NR OSS data · 26,810 cell-days · 1,915 cells · 14 days
 
 | Layer | Technique | Result |
 |-------|-----------|--------|
 | Rule-based | Weighted KPI health score | 5 health bands |
-| ML | Isolation Forest anomaly detection | 1,341 anomalous cell-days |
+| ML | Isolation Forest — 18 features | 1,341 anomalous cell-days |
 | Statistical | Linear regression + p-value | 140 degrading cells |
 
-Cell 1123 flagged 5 days before connector failure confirmed —
-HO success rate collapsed to 0% on the final two days.
-378 cells caught by anomaly detection that passed every threshold check.
+Cell 1123 flagged 5 days before connector failure confirmed.
+378 cells caught by ML that passed every individual threshold check.
 
 ---
 
 ### Project 2 — Handover Failure Root Cause Classifier
-`project2_ho_classifier.ipynb`
+`project2_ho_classifier.ipynb` · 700 daily HO failure events
 
-Two Random Forest classifiers — A3 intra-frequency and A5
-inter-frequency — built with physically correct trigger logic.
+| Model | Classes | Accuracy | CV Score |
+|-------|---------|----------|----------|
+| A3 event | 5 | 99.7% | 0.998 ± 0.001 |
+| A5 event | 4 | 99.3% | 0.995 ± 0.001 |
 
-| Model | Accuracy | CV Score |
-|-------|----------|----------|
-| A3 — 5 classes | 99.7% | 0.998 ± 0.001 |
-| A5 — 4 classes | 99.3% | 0.995 ± 0.001 |
-
-Failure classes: coverage gap · TTT mismatch · congestion block ·
-wrong target · success. Each class maps to a specific NOC action.
+Two physically separate Random Forest classifiers with real network
+parameter values embedded in training data. Recommendation engine maps
+each failure class to specific NOC action.
 
 ---
 
-### Project 3 — LTE Coverage Predictor
+### Project 3 — LTE Coverage Predictor + Interactive Map
 `project3_coverage_predictor.ipynb` · 567,195 measurements · Vienna
 
 Random Forest regression predicting RSRP at unmeasured locations.
-Features engineered from propagation physics — Haversine distance,
-angle off boresight, log10(distance), interference ratio.
-
-Data leakage identified and corrected: initial model used pathloss_db
-(R²=0.9683) — found to be mathematically circular with RSRP. Corrected
-model: RMSE 4.50 dBm, R²=0.8239 — competitive with commercial tools.
-
+Data leakage identified and corrected (pathloss_db tautology).
+Corrected model: RMSE 4.50 dBm, R²=0.8239.
+Angle off boresight ranked #1 feature (0.213 importance).
 Output: interactive OpenStreetMap heatmap with 4 toggleable layers.
 
 ---
 
-## Why domain knowledge matters here
+### Project 4 — 5G Massive MIMO Beam Health Analyzer
+`project4_mimo_analyzer.ipynb` · 500 cells · 30 days · 22 KPIs · 15,000 rows
 
-The RLF counter accumulates randomly rather than resetting daily —
-using the raw value is meaningless. You need to know that.
+| Scenario | Key diagnostic signature |
+|----------|--------------------------|
+| SU-MIMO fallback | cqi_rank_gap > 7.0 (high CQI + low rank) |
+| Beam misalignment | beam_switch_count > 15/day |
+| Beam failure | BFR spike at failure onset day |
+| Unknown anomaly | RF confidence < 60% — new failure mode |
 
-RSRQ not SINR drives handover decisions — building a HO classifier
-with SINR as the key feature would be wrong. You need to know that.
+100% accuracy on synthetic data. beam_efficiency composite feature
+ranked #1 in importance — captures rank utilization, link quality,
+and MU-MIMO pairing in one number.
 
-Angle off boresight looks unimportant in a bar chart because cell
-selection masks the effect. The Random Forest found it was the most
-important feature (0.213). You need field experience to know whether
-to trust the chart or the model.
+---
+
+## Why domain knowledge matters
+
+The RLF counter accumulates randomly — raw values are meaningless.
+RSRQ not SINR drives handover decisions in A2/A5 scenarios.
+SU-MIMO fallback shows identical SINR and CQI to a healthy cell —
+only the CQI/rank gap reveals the problem.
+Angle off boresight is masked by cell selection in aggregate statistics
+but ranked #1 by the Random Forest.
 
 These aren't things you learn from a Kaggle dataset.
+
+---
+
+## Architecture
+
+```
+Browser UI (kpi_upload_dashboard.html)
+    |
+    |-- POST /predict/upload    ML health scoring + trend analysis
+    |-- GET  /cell/{id}         on-demand cell detail
+    |-- POST /chat              OpenAI proxy (key never in browser)
+    |-- POST /agent             autonomous investigation loop
+    |-- GET  /rag/search        hybrid semantic + keyword search
+    |-- POST /rag/ask           RAG-grounded parameter Q&A
+    |-- POST /beam/upload       three-tier beam health detection
+    |-- GET  /beam/cell/{id}    beam cell detail
+
+FastAPI backend (network_health_api.py)
+    |
+    |-- ML models               health scoring, anomaly detection
+    |-- OpenAI GPT-4o           chat, agent, RAG explanations
+    |-- ChromaDB                1,695 parameter embeddings
+    |-- Beam models             Isolation Forest + Random Forest
+```
 
 ---
 
@@ -234,29 +258,40 @@ These aren't things you learn from a Kaggle dataset.
 ```
 Python · FastAPI · Uvicorn · Pydantic · python-dotenv
 Pandas · NumPy · Scikit-learn · SciPy · Folium
-Matplotlib · Seaborn · OpenAI API
+Matplotlib · Seaborn · ChromaDB · OpenAI API
+Vanilla JS · SVG sparklines
 ```
 
 ---
 
-## Files
+## Repository structure
 
 ```
-kpi_anomaly.ipynb                  Project 1 — Network health monitor
-project2_ho_classifier.ipynb       Project 2 — HO failure classifier
-project3_coverage_predictor.ipynb  Project 3 — Coverage predictor
-
-network_health_api.py              FastAPI backend + AI proxy
-kpi_upload_dashboard.html          Bulk KPI upload analyzer + AI chat
-noc_dashboard.html                 Single cell NOC tool
-Launch_NOC_Tool.bat                One-click Windows launcher
-requirements.txt                   Dependencies
-
-
-screenshots/
-  dashboard.png                    Summary cards + ranked cell table
-  cell_detail.png                  KPI detail popup + trend charts
-  ai_assistant.png                 AI assistant in action
+Telecom_AI_Portfolio/
+|
+|-- kpi_anomaly.ipynb                   Project 1 — Cell health monitor
+|-- project2_ho_classifier.ipynb        Project 2 — HO failure classifier
+|-- project3_coverage_predictor.ipynb   Project 3 — Coverage predictor
+|-- project4_mimo_analyzer.ipynb        Project 4 — MIMO beam analyzer
+|
+|-- network_health_api.py               FastAPI backend — all endpoints
+|-- kpi_upload_dashboard.html           Main dashboard UI
+|-- noc_dashboard.html                  Single cell tool
+|-- Launch_NOC_Tool.bat                 One-click Windows launcher
+|
+|-- generate_mimo_data.py               Synthetic beam KPI generator
+|-- build_rag.py                        RAG knowledge base builder
+|-- anonymize_baseline.py               Parameter baseline anonymizer
+|-- 5G_BL_public.xlsx                   Anonymized 5G NR parameter baseline
+|-- mimo_beam_data.csv                  Synthetic beam dataset (500x30)
+|-- mimo_beam_model.pkl                 Trained beam health model
+|
+|-- requirements.txt                    Python dependencies
+|
+|-- screenshots/
+    |-- dashboard.png                   Summary cards + ranked cell table
+    |-- cell_details.png                KPI detail popup + trend charts
+    |-- ai_assistant.png               AI assistant response
 ```
 
 ---
@@ -268,152 +303,4 @@ screenshots/
 Transitioning to AI/ML engineering for telecom networks.
 Open to: AI-RAN · Network Operations AI · Telecom AI Engineering
 
-<<<<<<< HEAD
-20 years 4G/5G RF engineering experience
-Transitioning to AI/ML engineering for telecom networks
-Open to roles in: AI-RAN · Network Operations AI · Telecom AI Engineering
-
----
-
-*Built during RF Engineer → AI Engineer transition | 2026*
-
----
-
-## Deployment — Production NOC Tools
-
-Beyond the ML notebooks, this portfolio includes a fully deployed
-AI-powered network operations toolset — a real application stack
-that any NOC team could use today.
-
-### Network Cell Health Monitor API
-`network_health_api.py`
-
-Production REST API built with FastAPI serving the Project 1 ML models.
-Accepts KPI measurements and returns health assessment in milliseconds.
-
-**Endpoints:**
-```
-POST /predict          → Single cell health assessment
-POST /predict/batch    → Multiple cells simultaneously
-POST /predict/upload   → Upload any OSS CSV/Excel export
-GET  /cell/{cell_id}   → Full cell detail with 14-day trend
-GET  /docs             → Auto-generated interactive API documentation
-```
-
-**Key capability — smart column detection:**
-Accepts any OSS export format without reformatting. Auto-detects Nokia,
-Ericsson, and Samsung column naming conventions using keyword matching.
-Columns like `NR PRB util PDSCH (NR_5114a)` are automatically mapped
-to the correct KPI — no template required.
-
-**Stack:** FastAPI · Pydantic · Pandas · Uvicorn
-
----
-
-### KPI Upload Analyzer
-`kpi_upload_dashboard.html`
-
-Professional NOC dashboard for bulk KPI analysis. Upload any multi-period
-OSS export and get instant ranked health assessment across all unique cells.
-
-**Features:**
-- Auto-detects OSS column names — Nokia, Ericsson, Samsung compatible
-- Groups multi-period data by unique cell — shows 2,038 cells not 26,790 rows
-- Health score ranking — worst cells first with flags and recommended actions
-- Toggle filters — band, anomaly detection, flag count, cell ID search
-- Click any cell → popup with KPI vs threshold table + 14-day sparkline charts
-- Trend direction per KPI — stable / improving / degrading with color coding
-- Export ranked results as CSV report
-- On-demand trend loading — modal opens instantly, charts fetch in background
-
----
-
-### Single Cell NOC Tool
-`noc_dashboard.html`
-
-Interactive tool for investigating individual cells. Enter KPI values
-manually or load preset scenarios (critical, healthy, watch, anomalous).
-Returns real-time health assessment with flags and recommended actions.
-
-**Presets included:**
-```
-Critical cell   → SINR 2.1dB, CQI 5.2, HO Success 91% — all flags triggered
-Healthy cell    → SINR 18.5dB, CQI 11.2, PRB 35% — zero flags
-Watch cell      → borderline KPIs — partial flags
-Anomalous cell  → looks normal but unusual KPI combination detected
-```
-
----
-
-### One-Click Launcher
-`Launch_NOC_Tool.bat`
-
-Double-click to launch the entire tool stack — no terminal required.
-Starts the FastAPI backend automatically and opens the dashboard in the browser.
-Press any key to stop cleanly.
-
-```
-Double-click Launch_NOC_Tool.bat
-        ↓
-API starts on localhost:8000
-        ↓
-Dashboard opens at http://localhost:8000/dashboard
-        ↓
-Upload any OSS KPI export
-        ↓
-Instant ranked health assessment with trend charts
-```
-
----
-
-## Running the Tools
-
-**Requirements:**
-```
-pip install fastapi uvicorn pydantic pandas numpy scikit-learn scipy folium openpyxl
-```
-
-**Start:**
-```
-Double-click Launch_NOC_Tool.bat
-```
-
-Or manually:
-```bash
-uvicorn network_health_api:app --reload
-# Then open kpi_upload_dashboard.html in browser
-```
-
-**API documentation:**
-```
-http://localhost:8000/docs
-```
-
----
-
-## Repository Structure
-
-```
-Telecom_AI_Portfolio/
-│
-├── kpi_anomaly.ipynb                 Project 1 — Network health monitor
-├── project2_ho_classifier.ipynb      Project 2 — HO failure classifier
-├── project3_coverage_predictor.ipynb Project 3 — Coverage predictor
-│
-├── network_health_api.py             FastAPI backend
-├── kpi_upload_dashboard.html         Bulk KPI upload analyzer
-├── noc_dashboard.html                Single cell NOC tool
-├── launch_noc.py                     Python launcher
-├── Launch_NOC_Tool.bat               One-click Windows launcher
-│
-├── network_health_dashboard.png      Project 1 output
-├── ho_confusion_matrices.png         Project 2 output
-├── coverage_heatmap.png              Project 3 static map
-├── coverage_heatmap.html             Project 3 interactive map
-│
-└── requirements.txt                  Python dependencies
-```
-
-=======
-*2026*
->>>>>>> d56a57b893714a5e0f6926d2dddafe802752b346
+*Built during RF Engineer to AI Engineer transition | 2026*
