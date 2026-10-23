@@ -1,8 +1,7 @@
 # Telecom AI Portfolio
 
-I spent 20 years optimizing 5G and 4G networks for T-Mobile, Verizon,
-AT&T, Bell Canada, Nokia, and Mavenir. This is what happens when you
-combine that with machine learning and generative AI.
+I spent 10 years optimizing and applying Machine Learning on 5G/4G networks for T-Mobile, Verizon,
+AT&T, Bell Canada, Nokia before I moved to AI Engineering. Now that I work in the field of AI , I combined Machine Learning and Generative AI
 
 Six projects. Real data. Deployed tools. Built to solve problems I
 actually dealt with in the field.
@@ -298,9 +297,4 @@ Telecom_AI_Portfolio/
 
 ## Contact
 
-20 years RF · T-Mobile · Verizon · AT&T · Bell Canada · Nokia · Mavenir
-
-Transitioning to AI/ML engineering for telecom networks.
-Open to: AI-RAN · Network Operations AI · Telecom AI Engineering
-
-*Built during RF Engineer to AI Engineer transition | 2026*
+AI/ML Engineer | Agentic AI, RAG, MCP & Applied ML | Healthcare, Telecom & Operational Decision Systems
